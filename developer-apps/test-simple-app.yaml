@@ -1,0 +1,19 @@
+# Test: Simple Application
+apiVersion: idp.example.com/v1alpha1
+kind: Application
+metadata:
+  name: test-simple-app
+  namespace: default
+spec:
+  name: test-simple-app
+  image: nginx:alpine
+  replicas: 2
+  port: 80
+  env:
+    - name: APP_NAME
+      value: test-simple-app
+    - name: ENVIRONMENT
+      value: testing
+  ingress:
+    enabled: true
+    host: test-simple-app.example.com
