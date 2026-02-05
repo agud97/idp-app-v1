@@ -121,6 +121,82 @@ spec:
     host: backend-api.example.com
 ```
 
+---
+
+### 3. Мульти-сервисное приложение (`MultiServiceApp`)
+
+Для приложений из нескольких микросервисов. Указываете список сервисов — для каждого создаётся отдельный Deployment.
+
+**Что создаётся автоматически (для каждого сервиса):**
+- Общий Namespace
+- Deployment (для каждого сервиса)
+- Service (для каждого сервиса)
+- ConfigMap (если есть env)
+- Secret (если есть secrets)
+- Ingress (опционально, для каждого сервиса)
+
+**Пример:**
+
+```yaml
+apiVersion: idp.example.com/v1alpha1
+kind: MultiServiceApp
+metadata:
+  name: my-platform
+  namespace: default
+spec:
+  name: my-platform               # Имя приложения (namespace)
+
+  services:
+    # Frontend
+    - name: frontend
+      image: nginx:alpine
+      replicas: 2
+      port: 80
+      env:
+        - name: API_URL
+          value: "http://backend:80"
+      ingress:
+        enabled: true
+        host: app.example.com
+
+    # Backend API
+    - name: backend
+      image: myapi:latest
+      replicas: 3
+      port: 8080
+      env:
+        - name: DATABASE_HOST
+          value: "postgres"
+      secrets:
+        - name: JWT_SECRET
+          value: my-secret
+      ingress:
+        enabled: true
+        host: api.example.com
+
+    # Redis cache
+    - name: redis
+      image: redis:7-alpine
+      replicas: 1
+      port: 6379
+
+    # Background worker
+    - name: worker
+      image: myworker:latest
+      replicas: 2
+      port: 8080
+      env:
+        - name: QUEUE_URL
+          value: "redis://redis:6379"
+```
+
+**Сервисы могут обращаться друг к другу по имени:**
+- `http://frontend:80`
+- `http://backend:80`
+- `redis:6379`
+
+---
+
 ## Переменные окружения для БД
 
 При использовании `ApplicationWithDB` в контейнер автоматически передаются:
@@ -148,7 +224,8 @@ idp-app-v1/
 │   └── providers/                 # Провайдеры Crossplane
 └── developer-apps/                # СЮДА ДОБАВЛЯЙТЕ ВАШИ ПРИЛОЖЕНИЯ
     ├── test-simple-app.yaml       # Пример простого приложения
-    └── test-app-with-db.yaml      # Пример приложения с БД
+    ├── test-app-with-db.yaml      # Пример приложения с БД
+    └── test-multi-service.yaml    # Пример мульти-сервисного приложения
 ```
 
 ## Проверка статуса
@@ -162,6 +239,9 @@ kubectl get applications.idp.example.com -A
 
 # Приложение с БД
 kubectl get applicationwithdbs.idp.example.com -A
+
+# Мульти-сервисное приложение
+kubectl get multiserviceapps.idp.example.com -A
 
 # Поды приложения
 kubectl get pods -n <имя-приложения>

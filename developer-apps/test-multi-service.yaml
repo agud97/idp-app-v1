@@ -1,0 +1,58 @@
+# Test: Multi-Service Application
+# Creates multiple deployments from a single YAML file
+apiVersion: idp.example.com/v1alpha1
+kind: MultiServiceApp
+metadata:
+  name: test-multi-service
+  namespace: default
+spec:
+  # Application name (used for namespace)
+  name: test-multi-service
+
+  # List of services - each creates its own Deployment + Service
+  services:
+    # Frontend service
+    - name: frontend
+      image: nginx:alpine
+      replicas: 2
+      port: 80
+      env:
+        - name: API_URL
+          value: "http://backend:80"
+        - name: ENVIRONMENT
+          value: production
+      ingress:
+        enabled: true
+        host: frontend.example.com
+
+    # Backend API service
+    - name: backend
+      image: nginx:alpine
+      replicas: 3
+      port: 8080
+      env:
+        - name: DATABASE_HOST
+          value: "database"
+        - name: CACHE_HOST
+          value: "redis"
+      secrets:
+        - name: JWT_SECRET
+          value: my-jwt-secret
+      ingress:
+        enabled: true
+        host: api.example.com
+
+    # Redis cache
+    - name: redis
+      image: redis:7-alpine
+      replicas: 1
+      port: 6379
+
+    # Worker service (no ingress needed)
+    - name: worker
+      image: nginx:alpine
+      replicas: 2
+      port: 8080
+      env:
+        - name: QUEUE_URL
+          value: "redis://redis:6379"
