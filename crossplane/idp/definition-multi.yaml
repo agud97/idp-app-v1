@@ -1,0 +1,97 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xmultiserviceapps.idp.example.com
+spec:
+  group: idp.example.com
+  names:
+    kind: XMultiServiceApp
+    plural: xmultiserviceapps
+  claimNames:
+    kind: MultiServiceApp
+    plural: multiserviceapps
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+                - services
+              properties:
+                name:
+                  type: string
+                  description: "Application name (used for namespace)"
+                services:
+                  type: array
+                  description: "List of services/deployments to create"
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - image
+                    properties:
+                      name:
+                        type: string
+                        description: "Service name"
+                      image:
+                        type: string
+                        description: "Docker image"
+                      replicas:
+                        type: integer
+                        default: 1
+                        description: "Number of replicas"
+                      port:
+                        type: integer
+                        default: 80
+                        description: "Container port"
+                      env:
+                        type: array
+                        description: "Environment variables"
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                            - name
+                            - value
+                      secrets:
+                        type: array
+                        description: "Secret environment variables"
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            value:
+                              type: string
+                          required:
+                            - name
+                            - value
+                      ingress:
+                        type: object
+                        description: "Ingress configuration"
+                        properties:
+                          enabled:
+                            type: boolean
+                            default: false
+                          host:
+                            type: string
+                          path:
+                            type: string
+                            default: "/"
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                serviceCount:
+                  type: integer
