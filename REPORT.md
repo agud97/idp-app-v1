@@ -4,6 +4,13 @@
 
 Создана платформа IDP на базе Kubernetes с использованием ArgoCD и Crossplane, позволяющая разработчикам деплоить приложения через простые YAML-файлы.
 
+**Поддерживаемые типы приложений:**
+| Тип | Kind | Описание |
+|-----|------|----------|
+| Простое | `Application` | Один контейнер, без БД |
+| С базой данных | `ApplicationWithDB` | Один контейнер + PostgreSQL + миграции |
+| Мульти-сервис | `MultiServiceApp` | Несколько контейнеров из одного YAML |
+
 ---
 
 ## 1. Подключение к репозиторию и кластеру
@@ -192,69 +199,15 @@ function-go-templating     True        True      xpkg.upbound.io/crossplane-cont
 ## 5. Создание IDP - Простое приложение (Application)
 
 ### Создан XRD `crossplane/idp/definition.yaml`
-```yaml
-apiVersion: apiextensions.crossplane.io/v1
-kind: CompositeResourceDefinition
-metadata:
-  name: xapplications.idp.example.com
-spec:
-  group: idp.example.com
-  names:
-    kind: XApplication
-    plural: xapplications
-  claimNames:
-    kind: Application
-    plural: applications
-  versions:
-    - name: v1alpha1
-      served: true
-      referenceable: true
-      schema:
-        openAPIV3Schema:
-          type: object
-          properties:
-            spec:
-              type: object
-              required:
-                - name
-                - image
-              properties:
-                name:
-                  type: string
-                image:
-                  type: string
-                replicas:
-                  type: integer
-                  default: 1
-                port:
-                  type: integer
-                  default: 80
-                env:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      value:
-                        type: string
-                secrets:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name:
-                        type: string
-                      value:
-                        type: string
-                ingress:
-                  type: object
-                  properties:
-                    enabled:
-                      type: boolean
-                    host:
-                      type: string
-```
+
+Определяет API для простых приложений с полями:
+- `name` - имя приложения
+- `image` - Docker образ
+- `replicas` - количество реплик
+- `port` - порт контейнера
+- `env` - переменные окружения
+- `secrets` - секретные переменные
+- `ingress` - настройки Ingress
 
 ### Создан Composition `crossplane/idp/composition.yaml`
 
@@ -287,7 +240,34 @@ Composition использует `function-go-templating` для генерац�
 
 ---
 
-## 7. Установка OpenEBS для локального хранилища
+## 7. Создание IDP - Мульти-сервисное приложение (MultiServiceApp)
+
+### Создан XRD `crossplane/idp/definition-multi.yaml`
+
+Определяет API для мульти-сервисных приложений:
+- `name` - имя приложения (используется для namespace)
+- `services` - массив сервисов, каждый со своими настройками:
+  - `name` - имя сервиса
+  - `image` - Docker образ
+  - `replicas` - количество реплик
+  - `port` - порт контейнера
+  - `env` - переменные окружения
+  - `secrets` - секретные переменные
+  - `ingress` - настройки Ingress
+
+### Создан Composition `crossplane/idp/composition-multi.yaml`
+
+Итерирует по массиву `services` и для каждого сервиса генерирует:
+- Общий Namespace (один на всё приложение)
+- Deployment (для каждого сервиса)
+- Service (для каждого сервиса)
+- ConfigMap (если есть env)
+- Secret (если есть secrets)
+- Ingress (если enabled)
+
+---
+
+## 8. Установка OpenEBS для локального хранилища
 
 ### Создан файл `applications/openebs.yaml`
 ```yaml
@@ -338,7 +318,7 @@ openebs-hostpath (default)   openebs.io/local   Delete          WaitForFirstCons
 
 ---
 
-## 8. Создание ArgoCD Applications для IDP
+## 9. Создание ArgoCD Applications для IDP
 
 ### `applications/crossplane-provider-kubernetes.yaml`
 ```yaml
@@ -407,9 +387,9 @@ spec:
 
 ---
 
-## 9. Тестирование
+## 10. Тестирование
 
-### Тест 1: Простое приложение
+### Тест 1: Простое приложение (Application)
 
 **Создан файл `developer-apps/test-simple-app.yaml`:**
 ```yaml
@@ -459,7 +439,7 @@ service/test-simple-app   ClusterIP
 
 ---
 
-### Тест 2: Приложение с БД и миграцией
+### Тест 2: Приложение с БД и миграцией (ApplicationWithDB)
 
 **Создан файл `developer-apps/test-app-with-db.yaml`:**
 ```yaml
@@ -496,13 +476,6 @@ spec:
     host: test-app-with-db.example.com
 ```
 
-**Коммит и push:**
-```bash
-git add .
-git commit -m "Add test-app-with-db to verify IDP with database"
-git push origin main
-```
-
 **Проверка:**
 ```bash
 # Статус приложения
@@ -529,7 +502,7 @@ pod/test-app-with-db-xxx      1/1     Running   # App replica 1
 pod/test-app-with-db-xxx      1/1     Running   # App replica 2
 pod/test-app-with-db-db-xxx   1/1     Running   # PostgreSQL
 
-# Init-контейнер
+# Init-контейнер (миграция)
 State:      Terminated
 Reason:     Completed
 Exit Code:  0
@@ -542,7 +515,117 @@ Exit Code:  0
 
 ---
 
-## 10. Финальная структура репозитория
+### Тест 3: Мульти-сервисное приложение (MultiServiceApp)
+
+**Создан файл `developer-apps/test-multi-service.yaml`:**
+```yaml
+apiVersion: idp.example.com/v1alpha1
+kind: MultiServiceApp
+metadata:
+  name: test-multi-service
+  namespace: default
+spec:
+  name: test-multi-service
+  services:
+    - name: frontend
+      image: nginx:alpine
+      replicas: 2
+      port: 80
+      env:
+        - name: API_URL
+          value: "http://backend:80"
+        - name: ENVIRONMENT
+          value: production
+      ingress:
+        enabled: true
+        host: frontend.example.com
+
+    - name: backend
+      image: nginx:alpine
+      replicas: 3
+      port: 8080
+      env:
+        - name: DATABASE_HOST
+          value: "database"
+        - name: CACHE_HOST
+          value: "redis"
+      secrets:
+        - name: JWT_SECRET
+          value: my-jwt-secret
+      ingress:
+        enabled: true
+        host: api.example.com
+
+    - name: redis
+      image: redis:7-alpine
+      replicas: 1
+      port: 6379
+
+    - name: worker
+      image: nginx:alpine
+      replicas: 2
+      port: 8080
+      env:
+        - name: QUEUE_URL
+          value: "redis://redis:6379"
+```
+
+**Проверка:**
+```bash
+# Статус приложения
+KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get multiserviceapps -A
+
+# Все ресурсы
+KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get all -n test-multi-service
+
+# Ingresses, ConfigMaps, Secrets
+KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get ingress,configmap,secret -n test-multi-service
+```
+
+**Результат:**
+```
+# Приложение
+NAME                 SYNCED   READY
+test-multi-service   True     True
+
+# Поды (4 сервиса, 8 подов)
+pod/frontend-xxx   1/1     Running   # 2 реплики
+pod/frontend-xxx   1/1     Running
+pod/backend-xxx    1/1     Running   # 3 реплики
+pod/backend-xxx    1/1     Running
+pod/backend-xxx    1/1     Running
+pod/redis-xxx      1/1     Running   # 1 реплика
+pod/worker-xxx     1/1     Running   # 2 реплики
+pod/worker-xxx     1/1     Running
+
+# Deployments
+deployment.apps/frontend   2/2
+deployment.apps/backend    3/3
+deployment.apps/redis      1/1
+deployment.apps/worker     2/2
+
+# Services
+service/frontend   ClusterIP
+service/backend    ClusterIP
+service/redis      ClusterIP
+service/worker     ClusterIP
+
+# Ingresses
+ingress/frontend   frontend.example.com
+ingress/backend    api.example.com
+
+# ConfigMaps
+configmap/frontend-config   2 env vars
+configmap/backend-config    2 env vars
+configmap/worker-config     1 env var
+
+# Secrets
+secret/backend-secret   1 secret
+```
+
+---
+
+## 11. Финальная структура репозитория
 
 ```
 idp-app-v1/
@@ -556,22 +639,25 @@ idp-app-v1/
 │   └── openebs.yaml
 ├── crossplane/
 │   ├── idp/
-│   │   ├── definition.yaml
-│   │   ├── definition-with-db.yaml
-│   │   ├── composition.yaml
-│   │   └── composition-with-db.yaml
+│   │   ├── definition.yaml           # XRD для Application
+│   │   ├── definition-with-db.yaml   # XRD для ApplicationWithDB
+│   │   ├── definition-multi.yaml     # XRD для MultiServiceApp
+│   │   ├── composition.yaml          # Composition для Application
+│   │   ├── composition-with-db.yaml  # Composition для ApplicationWithDB
+│   │   └── composition-multi.yaml    # Composition для MultiServiceApp
 │   └── providers/
 │       ├── provider-kubernetes.yaml
 │       ├── provider-kubernetes-config.yaml
 │       └── function-go-templating.yaml
 └── developer-apps/
-    ├── test-simple-app.yaml
-    └── test-app-with-db.yaml
+    ├── test-simple-app.yaml          # Пример простого приложения
+    ├── test-app-with-db.yaml         # Пример приложения с БД
+    └── test-multi-service.yaml       # Пример мульти-сервисного приложения
 ```
 
 ---
 
-## 11. Все ArgoCD Applications
+## 12. Все ArgoCD Applications
 
 ```bash
 KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get applications -n argocd
@@ -589,13 +675,31 @@ openebs                          Synced        Healthy
 
 ---
 
-## 12. Список коммитов
+## 13. Все Crossplane XRDs
+
+```bash
+KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get xrd
+```
+
+**Результат:**
+```
+NAME                                  ESTABLISHED   OFFERED
+xapplications.idp.example.com         True          True
+xapplicationwithdbs.idp.example.com   True          True
+xmultiserviceapps.idp.example.com     True          True
+```
+
+---
+
+## 14. Список коммитов
 
 ```bash
 git log --oneline
 ```
 
 ```
+3945f05 Add MultiServiceApp for multi-container deployments
+6db8e6b Add detailed implementation report
 d452012 Add README with developer instructions
 8f3dceb Fix composition template for multiline commands
 c94d051 Add test-app-with-db to verify IDP with database
@@ -621,8 +725,17 @@ f32f94d Add IDP platform with Crossplane XRD and Composition
 | Kubernetes Provider | Установлен (v0.13.0) |
 | Function Go-Templating | Установлен (v0.5.0) |
 | OpenEBS | Установлен (StorageClass default) |
-| IDP Application | Работает |
-| IDP ApplicationWithDB | Работает |
+| IDP Application | Работает ✓ |
+| IDP ApplicationWithDB | Работает ✓ |
+| IDP MultiServiceApp | Работает ✓ |
 | README | Добавлен |
+
+### Типы приложений
+
+| Тип | Kind | Что создаётся |
+|-----|------|---------------|
+| Простое | `Application` | Namespace, Deployment, Service, ConfigMap, Secret, Ingress |
+| С БД | `ApplicationWithDB` | + PostgreSQL, PVC, миграции (init-контейнер) |
+| Мульти-сервис | `MultiServiceApp` | N × (Deployment, Service, ConfigMap, Secret, Ingress) |
 
 **Репозиторий:** https://github.com/agud97/idp-app-v1
