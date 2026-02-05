@@ -197,6 +197,91 @@ spec:
 
 ---
 
+### 4. Тестовое окружение (`TestEnvironment`)
+
+**Для тестировщиков.** Позволяет развернуть все типы приложений одним YAML-файлом.
+
+**Что создаётся:**
+- Все простые приложения (`simpleApps`)
+- Все приложения с БД (`appsWithDB`)
+- Все мульти-сервисные приложения (`multiServiceApps`)
+
+Каждое приложение получает namespace с префиксом окружения: `{env-name}-{app-name}`
+
+**Пример:**
+
+```yaml
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: qa-env
+  namespace: default
+spec:
+  name: qa                          # Префикс для всех namespace
+
+  # Простые приложения
+  simpleApps:
+    - name: frontend
+      image: nginx:alpine
+      replicas: 2
+      port: 80
+      env:
+        - name: API_URL
+          value: "http://backend.qa-backend:80"
+      ingress:
+        enabled: true
+        host: qa-frontend.example.com
+
+  # Приложения с PostgreSQL
+  appsWithDB:
+    - name: backend
+      image: myapi:latest
+      replicas: 2
+      port: 8080
+      database:
+        version: "15"
+        storage: "1Gi"
+        dbName: backend_qa
+        username: backend
+        password: qapass123
+      migration:
+        enabled: true
+        image: postgres:15
+        command: ["/bin/sh", "-c", "psql ... -c 'CREATE TABLE ...'"]
+      ingress:
+        enabled: true
+        host: qa-api.example.com
+
+  # Мульти-сервисные приложения
+  multiServiceApps:
+    - name: platform
+      services:
+        - name: gateway
+          image: nginx:alpine
+          replicas: 2
+          ingress:
+            enabled: true
+            host: qa-gateway.example.com
+        - name: auth
+          image: nginx:alpine
+          replicas: 2
+        - name: redis
+          image: redis:7-alpine
+          replicas: 1
+```
+
+**Проверить статус:**
+```bash
+kubectl get testenvironments.idp.example.com -A
+```
+
+**Созданные namespace:**
+- `qa-frontend` — простое приложение
+- `qa-backend` — приложение с БД
+- `qa-platform` — мульти-сервисное приложение
+
+---
+
 ## Переменные окружения для БД
 
 При использовании `ApplicationWithDB` в контейнер автоматически передаются:
@@ -225,7 +310,8 @@ idp-app-v1/
 └── developer-apps/                # СЮДА ДОБАВЛЯЙТЕ ВАШИ ПРИЛОЖЕНИЯ
     ├── test-simple-app.yaml       # Пример простого приложения
     ├── test-app-with-db.yaml      # Пример приложения с БД
-    └── test-multi-service.yaml    # Пример мульти-сервисного приложения
+    ├── test-multi-service.yaml    # Пример мульти-сервисного приложения
+    └── qa-environment.yaml        # Пример тестового окружения (всё вместе)
 ```
 
 ## Проверка статуса
@@ -242,6 +328,9 @@ kubectl get applicationwithdbs.idp.example.com -A
 
 # Мульти-сервисное приложение
 kubectl get multiserviceapps.idp.example.com -A
+
+# Тестовое окружение
+kubectl get testenvironments.idp.example.com -A
 
 # Поды приложения
 kubectl get pods -n <имя-приложения>

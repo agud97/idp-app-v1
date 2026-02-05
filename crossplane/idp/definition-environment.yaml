@@ -1,0 +1,187 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xtestenvironments.idp.example.com
+spec:
+  group: idp.example.com
+  names:
+    kind: XTestEnvironment
+    plural: xtestenvironments
+  claimNames:
+    kind: TestEnvironment
+    plural: testenvironments
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: "Environment name (prefix for all apps)"
+
+                # Simple applications
+                simpleApps:
+                  type: array
+                  description: "List of simple applications"
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - image
+                    properties:
+                      name:
+                        type: string
+                      image:
+                        type: string
+                      replicas:
+                        type: integer
+                        default: 1
+                      port:
+                        type: integer
+                        default: 80
+                      env:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            value:
+                              type: string
+                      ingress:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          host:
+                            type: string
+
+                # Applications with database
+                appsWithDB:
+                  type: array
+                  description: "List of applications with PostgreSQL database"
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - image
+                    properties:
+                      name:
+                        type: string
+                      image:
+                        type: string
+                      replicas:
+                        type: integer
+                        default: 1
+                      port:
+                        type: integer
+                        default: 80
+                      env:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            value:
+                              type: string
+                      database:
+                        type: object
+                        properties:
+                          version:
+                            type: string
+                            default: "15"
+                          storage:
+                            type: string
+                            default: "1Gi"
+                          dbName:
+                            type: string
+                          username:
+                            type: string
+                            default: "app"
+                          password:
+                            type: string
+                      migration:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          image:
+                            type: string
+                          command:
+                            type: array
+                            items:
+                              type: string
+                      ingress:
+                        type: object
+                        properties:
+                          enabled:
+                            type: boolean
+                          host:
+                            type: string
+
+                # Multi-service applications
+                multiServiceApps:
+                  type: array
+                  description: "List of multi-service applications"
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - services
+                    properties:
+                      name:
+                        type: string
+                      services:
+                        type: array
+                        items:
+                          type: object
+                          required:
+                            - name
+                            - image
+                          properties:
+                            name:
+                              type: string
+                            image:
+                              type: string
+                            replicas:
+                              type: integer
+                              default: 1
+                            port:
+                              type: integer
+                              default: 80
+                            env:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  name:
+                                    type: string
+                                  value:
+                                    type: string
+                            ingress:
+                              type: object
+                              properties:
+                                enabled:
+                                  type: boolean
+                                host:
+                                  type: string
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                simpleAppsCount:
+                  type: integer
+                appsWithDBCount:
+                  type: integer
+                multiServiceAppsCount:
+                  type: integer
