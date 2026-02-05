@@ -1,0 +1,130 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xapplicationwithdbs.idp.example.com
+spec:
+  group: idp.example.com
+  names:
+    kind: XApplicationWithDB
+    plural: xapplicationwithdbs
+  claimNames:
+    kind: ApplicationWithDB
+    plural: applicationwithdbs
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+                - image
+              properties:
+                name:
+                  type: string
+                  description: "Application name"
+                image:
+                  type: string
+                  description: "Docker image (e.g., myapp:latest)"
+                replicas:
+                  type: integer
+                  default: 1
+                  description: "Number of replicas"
+                port:
+                  type: integer
+                  default: 80
+                  description: "Container port"
+                env:
+                  type: array
+                  description: "Environment variables"
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                    required:
+                      - name
+                      - value
+                secrets:
+                  type: array
+                  description: "Secret environment variables"
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      value:
+                        type: string
+                    required:
+                      - name
+                      - value
+                ingress:
+                  type: object
+                  description: "Ingress configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    host:
+                      type: string
+                database:
+                  type: object
+                  description: "Database configuration"
+                  required:
+                    - enabled
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    engine:
+                      type: string
+                      default: postgres
+                      description: "Database engine (postgres)"
+                    version:
+                      type: string
+                      default: "15"
+                      description: "Database version"
+                    storage:
+                      type: string
+                      default: "1Gi"
+                      description: "Storage size"
+                    dbName:
+                      type: string
+                      description: "Database name (defaults to app name)"
+                    username:
+                      type: string
+                      default: "app"
+                      description: "Database username"
+                    password:
+                      type: string
+                      description: "Database password"
+                migration:
+                  type: object
+                  description: "Migration init container configuration"
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    image:
+                      type: string
+                      description: "Migration container image"
+                    command:
+                      type: array
+                      items:
+                        type: string
+                      description: "Migration command"
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
+                dbEndpoint:
+                  type: string
+                endpoint:
+                  type: string
