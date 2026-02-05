@@ -185,10 +185,7 @@ spec:
                           - name: migration
                             image: {{ .observed.composite.resource.spec.migration.image }}
                             {{- if .observed.composite.resource.spec.migration.command }}
-                            command:
-                              {{- range .observed.composite.resource.spec.migration.command }}
-                              - "{{ . }}"
-                              {{- end }}
+                            command: {{ .observed.composite.resource.spec.migration.command | toJson }}
                             {{- end }}
                             envFrom:
                               - secretRef:
