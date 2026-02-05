@@ -29,18 +29,9 @@ spec:
     enabled: true
     image: postgres:15
     command:
-      - "/bin/sh"
-      - "-c"
-      - |
-        echo "=== Starting migration ==="
-        echo "Waiting for database..."
-        until pg_isready -h test-app-with-db-db -p 5432 -U testuser; do
-          sleep 2
-        done
-        echo "Database is ready!"
-        PGPASSWORD=$POSTGRES_PASSWORD psql -h test-app-with-db-db -U testuser -d testdb -c "CREATE TABLE IF NOT EXISTS migrations (id SERIAL PRIMARY KEY, name VARCHAR(255), applied_at TIMESTAMP DEFAULT NOW());"
-        PGPASSWORD=$POSTGRES_PASSWORD psql -h test-app-with-db-db -U testuser -d testdb -c "INSERT INTO migrations (name) VALUES ('initial_migration');"
-        echo "=== Migration completed ==="
+      - /bin/sh
+      - -c
+      - "echo 'Starting migration' && until pg_isready -h test-app-with-db-db -p 5432 -U testuser; do sleep 2; done && PGPASSWORD=$POSTGRES_PASSWORD psql -h test-app-with-db-db -U testuser -d testdb -c 'CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name VARCHAR(255));' && echo 'Migration done'"
 
   ingress:
     enabled: true
