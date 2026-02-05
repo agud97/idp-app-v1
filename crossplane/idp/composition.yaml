@@ -1,0 +1,170 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: application-composition
+spec:
+  compositeTypeRef:
+    apiVersion: idp.example.com/v1alpha1
+    kind: XApplication
+  mode: Pipeline
+  pipeline:
+    - step: render-deployment
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-deployment
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: deployment
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}
+                    namespace: {{ .observed.composite.resource.spec.name }}
+                    labels:
+                      app: {{ .observed.composite.resource.spec.name }}
+                  spec:
+                    replicas: {{ .observed.composite.resource.spec.replicas | default 1 }}
+                    selector:
+                      matchLabels:
+                        app: {{ .observed.composite.resource.spec.name }}
+                    template:
+                      metadata:
+                        labels:
+                          app: {{ .observed.composite.resource.spec.name }}
+                      spec:
+                        containers:
+                          - name: app
+                            image: {{ .observed.composite.resource.spec.image }}
+                            ports:
+                              - containerPort: {{ .observed.composite.resource.spec.port | default 80 }}
+                            {{- if or .observed.composite.resource.spec.env .observed.composite.resource.spec.secrets }}
+                            envFrom:
+                              {{- if .observed.composite.resource.spec.env }}
+                              - configMapRef:
+                                  name: {{ .observed.composite.resource.spec.name }}-config
+                              {{- end }}
+                              {{- if .observed.composite.resource.spec.secrets }}
+                              - secretRef:
+                                  name: {{ .observed.composite.resource.spec.name }}-secret
+                              {{- end }}
+                            {{- end }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-namespace
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: namespace
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-service
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: service
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}
+                    namespace: {{ .observed.composite.resource.spec.name }}
+                  spec:
+                    selector:
+                      app: {{ .observed.composite.resource.spec.name }}
+                    ports:
+                      - port: 80
+                        targetPort: {{ .observed.composite.resource.spec.port | default 80 }}
+                    type: ClusterIP
+            {{- if .observed.composite.resource.spec.env }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-configmap
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: configmap
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: ConfigMap
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}-config
+                    namespace: {{ .observed.composite.resource.spec.name }}
+                  data:
+                    {{- range .observed.composite.resource.spec.env }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if .observed.composite.resource.spec.secrets }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-secret
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}-secret
+                    namespace: {{ .observed.composite.resource.spec.name }}
+                  type: Opaque
+                  stringData:
+                    {{- range .observed.composite.resource.spec.secrets }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if and .observed.composite.resource.spec.ingress .observed.composite.resource.spec.ingress.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ .observed.composite.resource.spec.name }}-ingress
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: ingress
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: {{ .observed.composite.resource.spec.name }}
+                    namespace: {{ .observed.composite.resource.spec.name }}
+                  spec:
+                    rules:
+                      - host: {{ .observed.composite.resource.spec.ingress.host }}
+                        http:
+                          paths:
+                            - path: /
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: {{ .observed.composite.resource.spec.name }}
+                                  port:
+                                    number: 80
+            {{- end }}
