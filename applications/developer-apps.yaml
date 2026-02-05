@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: developer-apps
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agud97/idp-app-v1.git
+    path: developer-apps
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
