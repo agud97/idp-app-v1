@@ -6,28 +6,28 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://openebs.github.io/openebs
-    chart: openebs
+    repoURL: https://openebs.github.io/dynamic-localpv-provisioner
+    chart: localpv-provisioner
     targetRevision: "4.1.1"
     helm:
       values: |
-        engines:
-          local:
-            lvm:
-              enabled: false
-            zfs:
-              enabled: false
-          replicated:
-            mayastor:
-              enabled: false
-        localpv-provisioner:
+        hostpathClass:
           enabled: true
-          hostpathClass:
-            enabled: true
-            isDefaultClass: true
-            name: openebs-hostpath
-          deviceClass:
-            enabled: false
+          isDefaultClass: true
+          name: openebs-hostpath
+          basePath: /var/openebs/local
+        deviceClass:
+          enabled: false
+        localpv:
+          image:
+            registry: docker.io/
+            repository: openebs/localpv-provisioner
+            tag: 4.1.1
+        helperPod:
+          image:
+            registry: docker.io/
+            repository: openebs/linux-utils
+            tag: 4.1.0
   destination:
     server: https://kubernetes.default.svc
     namespace: openebs
