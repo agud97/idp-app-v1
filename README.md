@@ -199,14 +199,9 @@ spec:
 
 ### 4. Тестовое окружение (`TestEnvironment`)
 
-**Для тестировщиков.** Позволяет развернуть все типы приложений одним YAML-файлом.
+**Для тестировщиков.** Подробное руководство: **[QA-GUIDE.md](QA-GUIDE.md)**
 
-**Что создаётся:**
-- Все простые приложения (`simpleApps`)
-- Все приложения с БД (`appsWithDB`)
-- Все мульти-сервисные приложения (`multiServiceApps`)
-
-Каждое приложение получает namespace с префиксом окружения: `{env-name}-{app-name}`
+Позволяет включать/выключать 15 приложений через `enabled: true/false`.
 
 **Пример:**
 
@@ -219,66 +214,29 @@ metadata:
 spec:
   name: qa                          # Префикс для всех namespace
 
-  # Простые приложения
-  simpleApps:
-    - name: frontend
-      image: nginx:alpine
-      replicas: 2
-      port: 80
-      env:
-        - name: API_URL
-          value: "http://backend.qa-backend:80"
-      ingress:
-        enabled: true
-        host: qa-frontend.example.com
-
-  # Приложения с PostgreSQL
-  appsWithDB:
-    - name: backend
-      image: myapi:latest
-      replicas: 2
-      port: 8080
-      database:
-        version: "15"
-        storage: "1Gi"
-        dbName: backend_qa
-        username: backend
-        password: qapass123
-      migration:
-        enabled: true
-        image: postgres:15
-        command: ["/bin/sh", "-c", "psql ... -c 'CREATE TABLE ...'"]
-      ingress:
-        enabled: true
-        host: qa-api.example.com
-
-  # Мульти-сервисные приложения
-  multiServiceApps:
-    - name: platform
-      services:
-        - name: gateway
-          image: nginx:alpine
-          replicas: 2
-          ingress:
-            enabled: true
-            host: qa-gateway.example.com
-        - name: auth
-          image: nginx:alpine
-          replicas: 2
-        - name: redis
-          image: redis:7-alpine
-          replicas: 1
+  frontend:
+    enabled: true
+    replicas: 3
+  staticFiles:
+    enabled: true
+  backend:
+    enabled: true
+    database:
+      password: qapass123
+  platform:
+    enabled: true
+    services:
+      - name: gateway
+        image: nginx:alpine
+        replicas: 2
+      - name: auth
+        image: nginx:alpine
+  # docs, adminDashboard, landingPage, inventory, orders,
+  # billing, analytics, search, messaging, monitoring, cicd:
+  #   enabled: false (по умолчанию)
 ```
 
-**Проверить статус:**
-```bash
-kubectl get testenvironments.idp.example.com -A
-```
-
-**Созданные namespace:**
-- `qa-frontend` — простое приложение
-- `qa-backend` — приложение с БД
-- `qa-platform` — мульти-сервисное приложение
+**Включение/выключение:** измените `enabled` и запушьте. Ресурсы создаются/удаляются автоматически.
 
 ---
 
@@ -302,16 +260,22 @@ postgres://username:password@app-name-db:5432/dbname?sslmode=disable
 
 ```
 idp-app-v1/
-├── README.md                      # Этот файл
+├── README.md                      # Этот файл (для разработчиков)
+├── QA-GUIDE.md                    # Руководство для тестировщиков
+├── REPORT.md                      # Технический отчёт
 ├── applications/                  # ArgoCD Applications (не трогать)
 ├── crossplane/                    # Crossplane конфигурация (не трогать)
-│   ├── idp/                       # XRD и Compositions
+│   ├── idp/
+│   │   ├── base/                  # Базовые generic типы
+│   │   ├── apps/                  # 15 app-specific Kinds
+│   │   └── environment/           # TestEnvironment
 │   └── providers/                 # Провайдеры Crossplane
 └── developer-apps/                # СЮДА ДОБАВЛЯЙТЕ ВАШИ ПРИЛОЖЕНИЯ
     ├── test-simple-app.yaml       # Пример простого приложения
     ├── test-app-with-db.yaml      # Пример приложения с БД
     ├── test-multi-service.yaml    # Пример мульти-сервисного приложения
-    └── qa-environment.yaml        # Пример тестового окружения (всё вместе)
+    ├── test-frontend-standalone.yaml  # Пример standalone FrontendApp
+    └── qa-environment.yaml        # Тестовое окружение с enable/disable
 ```
 
 ## Проверка статуса

@@ -4,13 +4,53 @@
 
 Создана платформа IDP на базе Kubernetes с использованием ArgoCD и Crossplane, позволяющая разработчикам и тестировщикам деплоить приложения через простые YAML-файлы.
 
-**Поддерживаемые типы приложений:**
+**Архитектура:**
+- **ArgoCD** — GitOps-контроллер, следит за репозиторием и автоматически применяет изменения
+- **Crossplane** — оператор, который по YAML-описанию создаёт реальные Kubernetes-ресурсы (Deployments, Services, и т.д.)
+- **Go-Templating** — функция Crossplane для рендеринга шаблонов
+
+**Поддерживаемые типы:**
+
+### Базовые типы (generic, для разработчиков)
 | Тип | Kind | Описание |
 |-----|------|----------|
 | Простое | `Application` | Один контейнер, без БД |
 | С базой данных | `ApplicationWithDB` | Один контейнер + PostgreSQL + миграции |
 | Мульти-сервис | `MultiServiceApp` | Несколько контейнеров из одного YAML |
-| Тестовое окружение | `TestEnvironment` | **Все типы вместе** — для тестировщиков |
+
+### App-specific Kinds (15 штук)
+
+**Simple Apps (5):**
+| Kind | App Name | Image | Port | Replicas |
+|------|----------|-------|------|----------|
+| `FrontendApp` | frontend | nginx:alpine | 80 | 2 |
+| `StaticFilesApp` | static-files | nginx:alpine | 80 | 1 |
+| `DocsApp` | docs | nginx:alpine | 80 | 1 |
+| `AdminDashboardApp` | admin-dashboard | nginx:alpine | 80 | 1 |
+| `LandingPageApp` | landing-page | nginx:alpine | 80 | 1 |
+
+**Apps With DB (5):**
+| Kind | App Name | Image | Port | DB Name |
+|------|----------|-------|------|---------|
+| `BackendApp` | backend | nginx:alpine | 8080 | backend_db |
+| `InventoryApp` | inventory | nginx:alpine | 8080 | inventory_db |
+| `OrdersApp` | orders | nginx:alpine | 8080 | orders_db |
+| `BillingApp` | billing | nginx:alpine | 8080 | billing_db |
+| `AnalyticsApp` | analytics | nginx:alpine | 8080 | analytics_db |
+
+**Multi-Service Apps (5):**
+| Kind | App Name | Сервисы |
+|------|----------|---------|
+| `PlatformApp` | platform | gateway, auth, users, notifications, worker, redis |
+| `SearchApp` | search | indexer, query, crawler |
+| `MessagingApp` | messaging | broker, producer, consumer |
+| `MonitoringApp` | monitoring | collector, aggregator, dashboard |
+| `CicdApp` | cicd | controller, runner, registry |
+
+### Тестовое окружение
+| Тип | Kind | Описание |
+|-----|------|----------|
+| Тестовое окружение | `TestEnvironment` | Включение/выключение любых приложений через `enabled: true/false` |
 
 ---
 
@@ -167,33 +207,64 @@ openebs-hostpath (default)   openebs.io/local   Delete          WaitForFirstCons
 
 ## 6. Создание IDP типов приложений
 
-### 6.1. Простое приложение (`Application`)
+### 6.1. Базовые generic типы (в `crossplane/idp/base/`)
 
-**XRD:** `crossplane/idp/definition.yaml`
-**Composition:** `crossplane/idp/composition.yaml`
+| Тип | XRD | Composition | Что создаёт |
+|-----|-----|-------------|-------------|
+| Application | `definition.yaml` | `composition.yaml` | Namespace, Deployment, Service, ConfigMap, Secret, Ingress |
+| ApplicationWithDB | `definition-with-db.yaml` | `composition-with-db.yaml` | + PostgreSQL Deployment, PVC, DB Secret, миграции |
+| MultiServiceApp | `definition-multi.yaml` | `composition-multi.yaml` | N × (Deployment, Service, ConfigMap, Ingress) в одном namespace |
 
-Создаёт: Namespace, Deployment, Service, ConfigMap, Secret, Ingress
+### 6.2. App-specific Kinds (в `crossplane/idp/apps/`)
 
-### 6.2. Приложение с БД (`ApplicationWithDB`)
+15 приложений, каждое со своим Kind, дефолтными значениями и `environmentName` полем для namespace-префикса.
 
-**XRD:** `crossplane/idp/definition-with-db.yaml`
-**Composition:** `crossplane/idp/composition-with-db.yaml`
+Каждое приложение деплоится самостоятельно (standalone) или через TestEnvironment.
 
-Создаёт: + PostgreSQL Deployment, PVC, DB Secret, Init-контейнер для миграций
+**Дизайн:**
+- Если `environmentName` задан: namespace = `{envName}-{appName}`
+- Если не задан: namespace = `{appName}`
+- Все параметры (image, replicas, port) имеют дефолты, можно переопределить
 
-### 6.3. Мульти-сервисное приложение (`MultiServiceApp`)
+**Минимизация дублирования шаблонов:**
+Все apps одного базового типа используют идентичный go-template, только переменные в начале отличаются:
+```
+{{- $appName := "frontend" }}
+{{- $defaultImage := "nginx:alpine" }}
+{{- $defaultPort := 80 }}
+{{- $defaultReplicas := 2 }}
+... (тело шаблона одинаковое для всех simple apps)
+```
 
-**XRD:** `crossplane/idp/definition-multi.yaml`
-**Composition:** `crossplane/idp/composition-multi.yaml`
+### 6.3. TestEnvironment (в `crossplane/idp/environment/`)
 
-Создаёт: N × (Deployment, Service, ConfigMap, Ingress) в одном namespace
+**Новый дизайн** — вместо массивов `simpleApps[]`, `appsWithDB[]`, `multiServiceApps[]` используются именованные поля с `enabled: true/false`:
 
-### 6.4. Тестовое окружение (`TestEnvironment`)
+```yaml
+spec:
+  name: qa
+  frontend:
+    enabled: true
+    replicas: 3
+  backend:
+    enabled: true
+    database:
+      password: my-pass
+  platform:
+    enabled: true
+  search:
+    enabled: false
+```
 
-**XRD:** `crossplane/idp/definition-environment.yaml`
-**Composition:** `crossplane/idp/composition-environment.yaml`
+**Цепочка создания:**
+```
+TestEnvironment → Composition рендерит Object → Object создаёт Claim (FrontendApp) → Composition FrontendApp → K8s ресурсы
+```
 
-Объединяет все три типа в одном YAML для тестировщиков.
+**Цепочка удаления (enabled: false):**
+```
+Object не рендерится → Claim удаляется → все ресурсы удаляются → чистый teardown
+```
 
 ---
 
@@ -213,7 +284,7 @@ spec:
   replicas: 2
 ```
 
-**Результат:** ✅ 2 пода Running, Service, ConfigMap, Ingress
+**Результат:** 2 пода Running, Service, ConfigMap, Ingress
 
 ---
 
@@ -240,7 +311,7 @@ spec:
     command: ["/bin/sh", "-c", "psql ... CREATE TABLE users ..."]
 ```
 
-**Результат:** ✅ 2 app пода + 1 PostgreSQL, миграция выполнена, таблица создана
+**Результат:** 2 app пода + 1 PostgreSQL, миграция выполнена, таблица создана
 
 ---
 
@@ -265,11 +336,30 @@ spec:
       replicas: 2
 ```
 
-**Результат:** ✅ 8 подов (4 сервиса), все Running
+**Результат:** 8 подов (4 сервиса), все Running
 
 ---
 
-### Тест 4: Тестовое окружение (TestEnvironment)
+### Тест 4: Standalone FrontendApp
+
+```yaml
+# developer-apps/test-frontend-standalone.yaml
+apiVersion: idp.example.com/v1alpha1
+kind: FrontendApp
+metadata:
+  name: test-frontend-standalone
+spec:
+  replicas: 2
+  ingress:
+    enabled: true
+    host: frontend.example.com
+```
+
+**Результат:** namespace `frontend`, 2 пода Running (без environmentName → namespace = appName)
+
+---
+
+### Тест 5: TestEnvironment с enable/disable
 
 ```yaml
 # developer-apps/qa-environment.yaml
@@ -279,74 +369,46 @@ metadata:
   name: qa-env
 spec:
   name: qa
-
-  simpleApps:
-    - name: frontend
-      replicas: 2
-    - name: static-files
-      replicas: 1
-
-  appsWithDB:
-    - name: backend
-      replicas: 2
-      database:
-        dbName: backend_qa
-      migration:
-        enabled: true
-
-  multiServiceApps:
-    - name: platform
-      services:
-        - name: gateway
-          replicas: 2
-        - name: auth
-          replicas: 2
-        - name: users
-          replicas: 2
-        - name: notifications
-          replicas: 1
-        - name: worker
-          replicas: 2
-        - name: redis
-          replicas: 1
+  frontend:
+    enabled: true
+    replicas: 3
+  staticFiles:
+    enabled: true
+  backend:
+    enabled: true
+    database:
+      dbName: backend_qa
+      password: qapass123
+  platform:
+    enabled: true
+    services: [gateway, auth, users, notifications, worker, redis]
+  # Остальные 11 приложений: enabled: false
 ```
 
 **Результат:**
 ```
 NAMESPACE         PODS   ОПИСАНИЕ
-qa-frontend       2      Simple app
-qa-static-files   1      Simple app
-qa-backend        3      App + PostgreSQL
-qa-platform       10     6 микросервисов
-─────────────────────────────────────
-ИТОГО             16     4 namespace
+qa-frontend       3      FrontendApp (replicas: 3 override)
+qa-static-files   1      StaticFilesApp
+qa-backend        3      BackendApp + PostgreSQL (миграция + PVC)
+qa-platform       9      PlatformApp (6 микросервисов)
+────────────────────────────────────────
+ИТОГО             16     4 namespace, 11 приложений отключены
 ```
 
-**Проверка:**
-```bash
-KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get pods -A | grep "^qa-"
-```
+**Disabled apps проверка:** Namespace для docs, admin-dashboard, landing-page, inventory, orders, billing, analytics, search, messaging, monitoring, cicd — не существуют (корректно).
 
-```
-qa-backend       backend-xxx        1/1     Running
-qa-backend       backend-xxx        1/1     Running
-qa-backend       backend-db-xxx     1/1     Running
-qa-frontend      frontend-xxx       1/1     Running
-qa-frontend      frontend-xxx       1/1     Running
-qa-platform      auth-xxx           1/1     Running
-qa-platform      auth-xxx           1/1     Running
-qa-platform      gateway-xxx        1/1     Running
-qa-platform      gateway-xxx        1/1     Running
-qa-platform      notifications-xxx  1/1     Running
-qa-platform      redis-xxx          1/1     Running
-qa-platform      users-xxx          1/1     Running
-qa-platform      users-xxx          1/1     Running
-qa-platform      worker-xxx         1/1     Running
-qa-platform      worker-xxx         1/1     Running
-qa-static-files  static-files-xxx   1/1     Running
-```
+---
 
-**Все 16 подов Running!**
+### Тест 6: Toggle frontend off/on
+
+| Шаг | qa-frontend namespace | Поды | Standalone frontend |
+|-----|----------------------|------|---------------------|
+| До | Active, 3 пода | Running | Не затронут |
+| `enabled: false` (push) | **Удалён** | **Удалены** | Не затронут |
+| `enabled: true` (push) | **Создан заново** | **3 Running** | Не затронут |
+
+Чистый teardown и пересоздание работают. Standalone `FrontendApp` в namespace `frontend` не затронут toggle-ом.
 
 ---
 
@@ -354,8 +416,9 @@ qa-static-files  static-files-xxx   1/1     Running
 
 ```
 idp-app-v1/
-├── README.md
-├── REPORT.md
+├── README.md                               # Для разработчиков
+├── REPORT.md                               # Этот отчёт
+├── QA-GUIDE.md                             # Для тестировщиков
 ├── applications/
 │   ├── crossplane.yaml
 │   ├── crossplane-provider-kubernetes.yaml
@@ -364,14 +427,34 @@ idp-app-v1/
 │   └── openebs.yaml
 ├── crossplane/
 │   ├── idp/
-│   │   ├── definition.yaml              # XRD Application
-│   │   ├── definition-with-db.yaml      # XRD ApplicationWithDB
-│   │   ├── definition-multi.yaml        # XRD MultiServiceApp
-│   │   ├── definition-environment.yaml  # XRD TestEnvironment
-│   │   ├── composition.yaml             # Composition Application
-│   │   ├── composition-with-db.yaml     # Composition ApplicationWithDB
-│   │   ├── composition-multi.yaml       # Composition MultiServiceApp
-│   │   └── composition-environment.yaml # Composition TestEnvironment
+│   │   ├── base/                           # Generic типы
+│   │   │   ├── definition.yaml             # XApplication
+│   │   │   ├── composition.yaml
+│   │   │   ├── definition-with-db.yaml     # XApplicationWithDB
+│   │   │   ├── composition-with-db.yaml
+│   │   │   ├── definition-multi.yaml       # XMultiServiceApp
+│   │   │   └── composition-multi.yaml
+│   │   ├── apps/                           # 15 app-specific Kinds
+│   │   │   ├── frontend/                   # FrontendApp
+│   │   │   │   ├── definition.yaml
+│   │   │   │   └── composition.yaml
+│   │   │   ├── static-files/               # StaticFilesApp
+│   │   │   ├── docs/                       # DocsApp
+│   │   │   ├── admin-dashboard/            # AdminDashboardApp
+│   │   │   ├── landing-page/               # LandingPageApp
+│   │   │   ├── backend/                    # BackendApp (с БД)
+│   │   │   ├── inventory/                  # InventoryApp (с БД)
+│   │   │   ├── orders/                     # OrdersApp (с БД)
+│   │   │   ├── billing/                    # BillingApp (с БД)
+│   │   │   ├── analytics/                  # AnalyticsApp (с БД)
+│   │   │   ├── platform/                   # PlatformApp (мульти-сервис)
+│   │   │   ├── search/                     # SearchApp (мульти-сервис)
+│   │   │   ├── messaging/                  # MessagingApp (мульти-сервис)
+│   │   │   ├── monitoring/                 # MonitoringApp (мульти-сервис)
+│   │   │   └── cicd/                       # CicdApp (мульти-сервис)
+│   │   └── environment/                    # TestEnvironment
+│   │       ├── definition.yaml
+│   │       └── composition.yaml
 │   └── providers/
 │       ├── provider-kubernetes.yaml
 │       ├── provider-kubernetes-config.yaml
@@ -380,12 +463,13 @@ idp-app-v1/
     ├── test-simple-app.yaml
     ├── test-app-with-db.yaml
     ├── test-multi-service.yaml
-    └── qa-environment.yaml              # Полное тестовое окружение
+    ├── test-frontend-standalone.yaml       # Standalone FrontendApp
+    └── qa-environment.yaml                 # TestEnvironment с enable/disable
 ```
 
 ---
 
-## 9. Все Crossplane XRDs
+## 9. Все Crossplane XRDs (19 штук)
 
 ```bash
 KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get xrd
@@ -393,9 +477,24 @@ KUBECONFIG=/root/proj/cross/kubeconfig_6005021 kubectl get xrd
 
 ```
 NAME                                  ESTABLISHED   OFFERED
+xadmindashboardapps.idp.example.com   True          True
+xanalyticsapps.idp.example.com        True          True
 xapplications.idp.example.com         True          True
 xapplicationwithdbs.idp.example.com   True          True
+xbackendapps.idp.example.com          True          True
+xbillingapps.idp.example.com          True          True
+xcicdapps.idp.example.com             True          True
+xdocsapps.idp.example.com             True          True
+xfrontendapps.idp.example.com         True          True
+xinventoryapps.idp.example.com        True          True
+xlandingpageapps.idp.example.com      True          True
+xmessagingapps.idp.example.com        True          True
+xmonitoringapps.idp.example.com       True          True
 xmultiserviceapps.idp.example.com     True          True
+xordersapps.idp.example.com           True          True
+xplatformapps.idp.example.com         True          True
+xsearchapps.idp.example.com           True          True
+xstaticfilesapps.idp.example.com      True          True
 xtestenvironments.idp.example.com     True          True
 ```
 
@@ -421,6 +520,9 @@ openebs                          Synced        Healthy
 ## 11. Список коммитов
 
 ```
+4cd52cf Test: re-enable frontend in qa-environment
+1595070 Test: disable frontend in qa-environment
+87572e0 Refactor: 15 app-specific Crossplane Kinds with enable/disable TestEnvironment
 58257e2 Add TestEnvironment for deploying all app types together
 06f6915 Update report with MultiServiceApp documentation
 3945f05 Add MultiServiceApp for multi-container deployments
@@ -437,6 +539,7 @@ e6d36b1 Add Kubernetes ProviderConfig
 f32f94d Add IDP platform with Crossplane XRD and Composition
 3c100e0 Add Crossplane Kubernetes provider
 1e9fa6f Add ArgoCD Application for Crossplane
+ab7c5f5 Initial commit
 ```
 
 ---
@@ -445,15 +548,15 @@ f32f94d Add IDP platform with Crossplane XRD and Composition
 
 | Компонент | Статус |
 |-----------|--------|
-| ArgoCD | Установлен и настроен ✅ |
-| Crossplane | Установлен (v1.15.0) ✅ |
-| Kubernetes Provider | Установлен (v0.13.0) ✅ |
-| Function Go-Templating | Установлен (v0.5.0) ✅ |
-| OpenEBS | Установлен (StorageClass default) ✅ |
-| IDP Application | Работает ✅ |
-| IDP ApplicationWithDB | Работает ✅ |
-| IDP MultiServiceApp | Работает ✅ |
-| IDP TestEnvironment | Работает ✅ |
+| ArgoCD | Установлен и настроен |
+| Crossplane | Установлен (v1.15.0) |
+| Kubernetes Provider | Установлен (v0.13.0) |
+| Function Go-Templating | Установлен (v0.5.0) |
+| OpenEBS | Установлен (StorageClass default) |
+| 3 базовых типа (Application, ApplicationWithDB, MultiServiceApp) | Работают |
+| 15 app-specific Kinds | Работают |
+| TestEnvironment с enable/disable | Работает |
+| Toggle on/off (teardown/recreate) | Протестирован |
 
 ### Типы приложений
 
@@ -462,15 +565,19 @@ f32f94d Add IDP platform with Crossplane XRD and Composition
 | Простое | `Application` | Разработчик | Namespace, Deployment, Service, ConfigMap, Ingress |
 | С БД | `ApplicationWithDB` | Разработчик | + PostgreSQL, PVC, миграции |
 | Мульти-сервис | `MultiServiceApp` | Разработчик | N × (Deployment, Service, ConfigMap, Ingress) |
-| Тестовое окружение | `TestEnvironment` | **Тестировщик** | **Все типы вместе в одном YAML** |
+| App-specific (15 штук) | `FrontendApp`, `BackendApp`, ... | Разработчик/Тестировщик | Специализированные приложения с дефолтами |
+| Тестовое окружение | `TestEnvironment` | **Тестировщик** | **enable/disable любых приложений** |
 
 ### Команды для проверки
 
 ```bash
-# Все IDP ресурсы
-kubectl get applications.idp.example.com -A
-kubectl get applicationwithdbs.idp.example.com -A
-kubectl get multiserviceapps.idp.example.com -A
+# Все XRDs
+kubectl get xrd
+
+# Все app-specific claims
+kubectl get frontendapp,backendapp,platformapp,staticfilesapp -A
+
+# TestEnvironment
 kubectl get testenvironments.idp.example.com -A
 
 # Все поды тестового окружения
