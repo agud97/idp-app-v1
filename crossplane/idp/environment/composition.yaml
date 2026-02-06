@@ -1,0 +1,863 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: test-environment-composition
+spec:
+  compositeTypeRef:
+    apiVersion: idp.example.com/v1alpha1
+    kind: XTestEnvironment
+  mode: Pipeline
+  pipeline:
+    - step: render-simple-apps
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $envName := .observed.composite.resource.spec.name }}
+            {{- $spec := .observed.composite.resource.spec }}
+            {{- if and $spec.frontend $spec.frontend.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-frontend-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: frontend-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: FrontendApp
+                  metadata:
+                    name: {{ $envName }}-frontend
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.frontend.image }}
+                    image: {{ $spec.frontend.image }}
+                    {{- end }}
+                    {{- if $spec.frontend.replicas }}
+                    replicas: {{ $spec.frontend.replicas }}
+                    {{- end }}
+                    {{- if $spec.frontend.port }}
+                    port: {{ $spec.frontend.port }}
+                    {{- end }}
+                    {{- if $spec.frontend.env }}
+                    env:
+                      {{- range $spec.frontend.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.frontend.ingress }}
+                    ingress:
+                      {{- if $spec.frontend.ingress.enabled }}
+                      enabled: {{ $spec.frontend.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.frontend.ingress.host }}
+                      host: {{ $spec.frontend.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.staticFiles $spec.staticFiles.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-static-files-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: static-files-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: StaticFilesApp
+                  metadata:
+                    name: {{ $envName }}-static-files
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.staticFiles.image }}
+                    image: {{ $spec.staticFiles.image }}
+                    {{- end }}
+                    {{- if $spec.staticFiles.replicas }}
+                    replicas: {{ $spec.staticFiles.replicas }}
+                    {{- end }}
+                    {{- if $spec.staticFiles.port }}
+                    port: {{ $spec.staticFiles.port }}
+                    {{- end }}
+                    {{- if $spec.staticFiles.env }}
+                    env:
+                      {{- range $spec.staticFiles.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.staticFiles.ingress }}
+                    ingress:
+                      {{- if $spec.staticFiles.ingress.enabled }}
+                      enabled: {{ $spec.staticFiles.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.staticFiles.ingress.host }}
+                      host: {{ $spec.staticFiles.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.docs $spec.docs.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-docs-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: docs-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: DocsApp
+                  metadata:
+                    name: {{ $envName }}-docs
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.docs.image }}
+                    image: {{ $spec.docs.image }}
+                    {{- end }}
+                    {{- if $spec.docs.replicas }}
+                    replicas: {{ $spec.docs.replicas }}
+                    {{- end }}
+                    {{- if $spec.docs.port }}
+                    port: {{ $spec.docs.port }}
+                    {{- end }}
+                    {{- if $spec.docs.env }}
+                    env:
+                      {{- range $spec.docs.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.docs.ingress }}
+                    ingress:
+                      {{- if $spec.docs.ingress.enabled }}
+                      enabled: {{ $spec.docs.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.docs.ingress.host }}
+                      host: {{ $spec.docs.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.adminDashboard $spec.adminDashboard.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-admin-dashboard-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: admin-dashboard-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: AdminDashboardApp
+                  metadata:
+                    name: {{ $envName }}-admin-dashboard
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.adminDashboard.image }}
+                    image: {{ $spec.adminDashboard.image }}
+                    {{- end }}
+                    {{- if $spec.adminDashboard.replicas }}
+                    replicas: {{ $spec.adminDashboard.replicas }}
+                    {{- end }}
+                    {{- if $spec.adminDashboard.port }}
+                    port: {{ $spec.adminDashboard.port }}
+                    {{- end }}
+                    {{- if $spec.adminDashboard.env }}
+                    env:
+                      {{- range $spec.adminDashboard.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.adminDashboard.ingress }}
+                    ingress:
+                      {{- if $spec.adminDashboard.ingress.enabled }}
+                      enabled: {{ $spec.adminDashboard.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.adminDashboard.ingress.host }}
+                      host: {{ $spec.adminDashboard.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.landingPage $spec.landingPage.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-landing-page-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: landing-page-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: LandingPageApp
+                  metadata:
+                    name: {{ $envName }}-landing-page
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.landingPage.image }}
+                    image: {{ $spec.landingPage.image }}
+                    {{- end }}
+                    {{- if $spec.landingPage.replicas }}
+                    replicas: {{ $spec.landingPage.replicas }}
+                    {{- end }}
+                    {{- if $spec.landingPage.port }}
+                    port: {{ $spec.landingPage.port }}
+                    {{- end }}
+                    {{- if $spec.landingPage.env }}
+                    env:
+                      {{- range $spec.landingPage.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.landingPage.ingress }}
+                    ingress:
+                      {{- if $spec.landingPage.ingress.enabled }}
+                      enabled: {{ $spec.landingPage.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.landingPage.ingress.host }}
+                      host: {{ $spec.landingPage.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+    - step: render-db-apps
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $envName := .observed.composite.resource.spec.name }}
+            {{- $spec := .observed.composite.resource.spec }}
+            {{- if and $spec.backend $spec.backend.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-backend-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: backend-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: BackendApp
+                  metadata:
+                    name: {{ $envName }}-backend
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.backend.image }}
+                    image: {{ $spec.backend.image }}
+                    {{- end }}
+                    {{- if $spec.backend.replicas }}
+                    replicas: {{ $spec.backend.replicas }}
+                    {{- end }}
+                    {{- if $spec.backend.port }}
+                    port: {{ $spec.backend.port }}
+                    {{- end }}
+                    {{- if $spec.backend.env }}
+                    env:
+                      {{- range $spec.backend.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.backend.database }}
+                    database:
+                      {{- if $spec.backend.database.version }}
+                      version: "{{ $spec.backend.database.version }}"
+                      {{- end }}
+                      {{- if $spec.backend.database.storage }}
+                      storage: "{{ $spec.backend.database.storage }}"
+                      {{- end }}
+                      {{- if $spec.backend.database.dbName }}
+                      dbName: {{ $spec.backend.database.dbName }}
+                      {{- end }}
+                      {{- if $spec.backend.database.username }}
+                      username: {{ $spec.backend.database.username }}
+                      {{- end }}
+                      {{- if $spec.backend.database.password }}
+                      password: {{ $spec.backend.database.password }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.backend.migration }}
+                    migration:
+                      {{- if $spec.backend.migration.enabled }}
+                      enabled: {{ $spec.backend.migration.enabled }}
+                      {{- end }}
+                      {{- if $spec.backend.migration.image }}
+                      image: {{ $spec.backend.migration.image }}
+                      {{- end }}
+                      {{- if $spec.backend.migration.command }}
+                      command: {{ $spec.backend.migration.command | toJson }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.backend.ingress }}
+                    ingress:
+                      {{- if $spec.backend.ingress.enabled }}
+                      enabled: {{ $spec.backend.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.backend.ingress.host }}
+                      host: {{ $spec.backend.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.inventory $spec.inventory.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-inventory-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: inventory-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: InventoryApp
+                  metadata:
+                    name: {{ $envName }}-inventory
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.inventory.image }}
+                    image: {{ $spec.inventory.image }}
+                    {{- end }}
+                    {{- if $spec.inventory.replicas }}
+                    replicas: {{ $spec.inventory.replicas }}
+                    {{- end }}
+                    {{- if $spec.inventory.port }}
+                    port: {{ $spec.inventory.port }}
+                    {{- end }}
+                    {{- if $spec.inventory.env }}
+                    env:
+                      {{- range $spec.inventory.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.inventory.database }}
+                    database:
+                      {{- if $spec.inventory.database.version }}
+                      version: "{{ $spec.inventory.database.version }}"
+                      {{- end }}
+                      {{- if $spec.inventory.database.storage }}
+                      storage: "{{ $spec.inventory.database.storage }}"
+                      {{- end }}
+                      {{- if $spec.inventory.database.dbName }}
+                      dbName: {{ $spec.inventory.database.dbName }}
+                      {{- end }}
+                      {{- if $spec.inventory.database.username }}
+                      username: {{ $spec.inventory.database.username }}
+                      {{- end }}
+                      {{- if $spec.inventory.database.password }}
+                      password: {{ $spec.inventory.database.password }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.inventory.migration }}
+                    migration:
+                      {{- if $spec.inventory.migration.enabled }}
+                      enabled: {{ $spec.inventory.migration.enabled }}
+                      {{- end }}
+                      {{- if $spec.inventory.migration.image }}
+                      image: {{ $spec.inventory.migration.image }}
+                      {{- end }}
+                      {{- if $spec.inventory.migration.command }}
+                      command: {{ $spec.inventory.migration.command | toJson }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.inventory.ingress }}
+                    ingress:
+                      {{- if $spec.inventory.ingress.enabled }}
+                      enabled: {{ $spec.inventory.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.inventory.ingress.host }}
+                      host: {{ $spec.inventory.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.orders $spec.orders.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-orders-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: orders-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: OrdersApp
+                  metadata:
+                    name: {{ $envName }}-orders
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.orders.image }}
+                    image: {{ $spec.orders.image }}
+                    {{- end }}
+                    {{- if $spec.orders.replicas }}
+                    replicas: {{ $spec.orders.replicas }}
+                    {{- end }}
+                    {{- if $spec.orders.port }}
+                    port: {{ $spec.orders.port }}
+                    {{- end }}
+                    {{- if $spec.orders.env }}
+                    env:
+                      {{- range $spec.orders.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.orders.database }}
+                    database:
+                      {{- if $spec.orders.database.version }}
+                      version: "{{ $spec.orders.database.version }}"
+                      {{- end }}
+                      {{- if $spec.orders.database.storage }}
+                      storage: "{{ $spec.orders.database.storage }}"
+                      {{- end }}
+                      {{- if $spec.orders.database.dbName }}
+                      dbName: {{ $spec.orders.database.dbName }}
+                      {{- end }}
+                      {{- if $spec.orders.database.username }}
+                      username: {{ $spec.orders.database.username }}
+                      {{- end }}
+                      {{- if $spec.orders.database.password }}
+                      password: {{ $spec.orders.database.password }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.orders.migration }}
+                    migration:
+                      {{- if $spec.orders.migration.enabled }}
+                      enabled: {{ $spec.orders.migration.enabled }}
+                      {{- end }}
+                      {{- if $spec.orders.migration.image }}
+                      image: {{ $spec.orders.migration.image }}
+                      {{- end }}
+                      {{- if $spec.orders.migration.command }}
+                      command: {{ $spec.orders.migration.command | toJson }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.orders.ingress }}
+                    ingress:
+                      {{- if $spec.orders.ingress.enabled }}
+                      enabled: {{ $spec.orders.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.orders.ingress.host }}
+                      host: {{ $spec.orders.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.billing $spec.billing.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-billing-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: billing-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: BillingApp
+                  metadata:
+                    name: {{ $envName }}-billing
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.billing.image }}
+                    image: {{ $spec.billing.image }}
+                    {{- end }}
+                    {{- if $spec.billing.replicas }}
+                    replicas: {{ $spec.billing.replicas }}
+                    {{- end }}
+                    {{- if $spec.billing.port }}
+                    port: {{ $spec.billing.port }}
+                    {{- end }}
+                    {{- if $spec.billing.env }}
+                    env:
+                      {{- range $spec.billing.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.billing.database }}
+                    database:
+                      {{- if $spec.billing.database.version }}
+                      version: "{{ $spec.billing.database.version }}"
+                      {{- end }}
+                      {{- if $spec.billing.database.storage }}
+                      storage: "{{ $spec.billing.database.storage }}"
+                      {{- end }}
+                      {{- if $spec.billing.database.dbName }}
+                      dbName: {{ $spec.billing.database.dbName }}
+                      {{- end }}
+                      {{- if $spec.billing.database.username }}
+                      username: {{ $spec.billing.database.username }}
+                      {{- end }}
+                      {{- if $spec.billing.database.password }}
+                      password: {{ $spec.billing.database.password }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.billing.migration }}
+                    migration:
+                      {{- if $spec.billing.migration.enabled }}
+                      enabled: {{ $spec.billing.migration.enabled }}
+                      {{- end }}
+                      {{- if $spec.billing.migration.image }}
+                      image: {{ $spec.billing.migration.image }}
+                      {{- end }}
+                      {{- if $spec.billing.migration.command }}
+                      command: {{ $spec.billing.migration.command | toJson }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.billing.ingress }}
+                    ingress:
+                      {{- if $spec.billing.ingress.enabled }}
+                      enabled: {{ $spec.billing.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.billing.ingress.host }}
+                      host: {{ $spec.billing.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.analytics $spec.analytics.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-analytics-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: analytics-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: AnalyticsApp
+                  metadata:
+                    name: {{ $envName }}-analytics
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.analytics.image }}
+                    image: {{ $spec.analytics.image }}
+                    {{- end }}
+                    {{- if $spec.analytics.replicas }}
+                    replicas: {{ $spec.analytics.replicas }}
+                    {{- end }}
+                    {{- if $spec.analytics.port }}
+                    port: {{ $spec.analytics.port }}
+                    {{- end }}
+                    {{- if $spec.analytics.env }}
+                    env:
+                      {{- range $spec.analytics.env }}
+                      - name: {{ .name }}
+                        value: "{{ .value }}"
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.analytics.database }}
+                    database:
+                      {{- if $spec.analytics.database.version }}
+                      version: "{{ $spec.analytics.database.version }}"
+                      {{- end }}
+                      {{- if $spec.analytics.database.storage }}
+                      storage: "{{ $spec.analytics.database.storage }}"
+                      {{- end }}
+                      {{- if $spec.analytics.database.dbName }}
+                      dbName: {{ $spec.analytics.database.dbName }}
+                      {{- end }}
+                      {{- if $spec.analytics.database.username }}
+                      username: {{ $spec.analytics.database.username }}
+                      {{- end }}
+                      {{- if $spec.analytics.database.password }}
+                      password: {{ $spec.analytics.database.password }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.analytics.migration }}
+                    migration:
+                      {{- if $spec.analytics.migration.enabled }}
+                      enabled: {{ $spec.analytics.migration.enabled }}
+                      {{- end }}
+                      {{- if $spec.analytics.migration.image }}
+                      image: {{ $spec.analytics.migration.image }}
+                      {{- end }}
+                      {{- if $spec.analytics.migration.command }}
+                      command: {{ $spec.analytics.migration.command | toJson }}
+                      {{- end }}
+                    {{- end }}
+                    {{- if $spec.analytics.ingress }}
+                    ingress:
+                      {{- if $spec.analytics.ingress.enabled }}
+                      enabled: {{ $spec.analytics.ingress.enabled }}
+                      {{- end }}
+                      {{- if $spec.analytics.ingress.host }}
+                      host: {{ $spec.analytics.ingress.host }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+    - step: render-multi-service-apps
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $envName := .observed.composite.resource.spec.name }}
+            {{- $spec := .observed.composite.resource.spec }}
+            {{- if and $spec.platform $spec.platform.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-platform-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: platform-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: PlatformApp
+                  metadata:
+                    name: {{ $envName }}-platform
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.platform.services }}
+                    services:
+                      {{- range $spec.platform.services }}
+                      - name: {{ .name }}
+                        image: {{ .image }}
+                        {{- if .replicas }}
+                        replicas: {{ .replicas }}
+                        {{- end }}
+                        {{- if .port }}
+                        port: {{ .port }}
+                        {{- end }}
+                        {{- if .env }}
+                        env:
+                          {{- range .env }}
+                          - name: {{ .name }}
+                            value: "{{ .value }}"
+                          {{- end }}
+                        {{- end }}
+                        {{- if and .ingress .ingress.enabled }}
+                        ingress:
+                          enabled: {{ .ingress.enabled }}
+                          {{- if .ingress.host }}
+                          host: {{ .ingress.host }}
+                          {{- end }}
+                        {{- end }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.search $spec.search.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-search-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: search-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: SearchApp
+                  metadata:
+                    name: {{ $envName }}-search
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.search.services }}
+                    services:
+                      {{- range $spec.search.services }}
+                      - name: {{ .name }}
+                        image: {{ .image }}
+                        {{- if .replicas }}
+                        replicas: {{ .replicas }}
+                        {{- end }}
+                        {{- if .port }}
+                        port: {{ .port }}
+                        {{- end }}
+                        {{- if .env }}
+                        env:
+                          {{- range .env }}
+                          - name: {{ .name }}
+                            value: "{{ .value }}"
+                          {{- end }}
+                        {{- end }}
+                        {{- if and .ingress .ingress.enabled }}
+                        ingress:
+                          enabled: {{ .ingress.enabled }}
+                          {{- if .ingress.host }}
+                          host: {{ .ingress.host }}
+                          {{- end }}
+                        {{- end }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.messaging $spec.messaging.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-messaging-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: messaging-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: MessagingApp
+                  metadata:
+                    name: {{ $envName }}-messaging
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.messaging.services }}
+                    services:
+                      {{- range $spec.messaging.services }}
+                      - name: {{ .name }}
+                        image: {{ .image }}
+                        {{- if .replicas }}
+                        replicas: {{ .replicas }}
+                        {{- end }}
+                        {{- if .port }}
+                        port: {{ .port }}
+                        {{- end }}
+                        {{- if .env }}
+                        env:
+                          {{- range .env }}
+                          - name: {{ .name }}
+                            value: "{{ .value }}"
+                          {{- end }}
+                        {{- end }}
+                        {{- if and .ingress .ingress.enabled }}
+                        ingress:
+                          enabled: {{ .ingress.enabled }}
+                          {{- if .ingress.host }}
+                          host: {{ .ingress.host }}
+                          {{- end }}
+                        {{- end }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.monitoring $spec.monitoring.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-monitoring-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: monitoring-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: MonitoringApp
+                  metadata:
+                    name: {{ $envName }}-monitoring
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.monitoring.services }}
+                    services:
+                      {{- range $spec.monitoring.services }}
+                      - name: {{ .name }}
+                        image: {{ .image }}
+                        {{- if .replicas }}
+                        replicas: {{ .replicas }}
+                        {{- end }}
+                        {{- if .port }}
+                        port: {{ .port }}
+                        {{- end }}
+                        {{- if .env }}
+                        env:
+                          {{- range .env }}
+                          - name: {{ .name }}
+                            value: "{{ .value }}"
+                          {{- end }}
+                        {{- end }}
+                        {{- if and .ingress .ingress.enabled }}
+                        ingress:
+                          enabled: {{ .ingress.enabled }}
+                          {{- if .ingress.host }}
+                          host: {{ .ingress.host }}
+                          {{- end }}
+                        {{- end }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}
+            {{- if and $spec.cicd $spec.cicd.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $envName }}-cicd-claim
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: cicd-claim
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: idp.example.com/v1alpha1
+                  kind: CicdApp
+                  metadata:
+                    name: {{ $envName }}-cicd
+                    namespace: default
+                  spec:
+                    environmentName: {{ $envName }}
+                    {{- if $spec.cicd.services }}
+                    services:
+                      {{- range $spec.cicd.services }}
+                      - name: {{ .name }}
+                        image: {{ .image }}
+                        {{- if .replicas }}
+                        replicas: {{ .replicas }}
+                        {{- end }}
+                        {{- if .port }}
+                        port: {{ .port }}
+                        {{- end }}
+                        {{- if .env }}
+                        env:
+                          {{- range .env }}
+                          - name: {{ .name }}
+                            value: "{{ .value }}"
+                          {{- end }}
+                        {{- end }}
+                        {{- if and .ingress .ingress.enabled }}
+                        ingress:
+                          enabled: {{ .ingress.enabled }}
+                          {{- if .ingress.host }}
+                          host: {{ .ingress.host }}
+                          {{- end }}
+                        {{- end }}
+                      {{- end }}
+                    {{- end }}
+            {{- end }}

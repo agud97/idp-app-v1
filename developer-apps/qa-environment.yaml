@@ -1,5 +1,5 @@
 # QA Test Environment
-# Deploys all application types in one YAML
+# Enable/disable individual applications
 apiVersion: idp.example.com/v1alpha1
 kind: TestEnvironment
 metadata:
@@ -8,96 +8,124 @@ metadata:
 spec:
   name: qa
 
-  # Simple applications (stateless)
-  simpleApps:
-    - name: frontend
-      image: nginx:alpine
-      replicas: 2
-      port: 80
-      env:
-        - name: API_URL
-          value: "http://backend.qa-backend:80"
-        - name: ENV
-          value: qa
-      ingress:
-        enabled: true
-        host: qa-frontend.example.com
+  # Simple Apps
+  frontend:
+    enabled: true
+    replicas: 3
+    env:
+      - name: API_URL
+        value: "http://backend.qa-backend:80"
+      - name: ENV
+        value: qa
+    ingress:
+      enabled: true
+      host: qa-frontend.example.com
 
-    - name: static-files
-      image: nginx:alpine
-      replicas: 1
-      port: 80
+  staticFiles:
+    enabled: true
 
-  # Applications with PostgreSQL database
-  appsWithDB:
-    - name: backend
-      image: nginx:alpine
-      replicas: 2
-      port: 8080
-      env:
-        - name: ENV
-          value: qa
-      database:
-        version: "15"
-        storage: "1Gi"
-        dbName: backend_qa
-        username: backend
-        password: qapass123
-      migration:
-        enabled: true
-        image: postgres:15
-        command:
-          - /bin/sh
-          - -c
-          - "until pg_isready -h backend-db -U backend; do sleep 2; done && PGPASSWORD=$POSTGRES_PASSWORD psql -h backend-db -U backend -d backend_qa -c 'CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name VARCHAR(255), email VARCHAR(255));' && echo 'Migration done'"
-      ingress:
-        enabled: true
-        host: qa-api.example.com
+  docs:
+    enabled: false
 
-  # Multi-service applications (microservices)
-  multiServiceApps:
-    - name: platform
-      services:
-        - name: gateway
-          image: nginx:alpine
-          replicas: 2
-          port: 80
-          env:
-            - name: AUTH_SERVICE
-              value: "http://auth:80"
-            - name: USER_SERVICE
-              value: "http://users:80"
-          ingress:
-            enabled: true
-            host: qa-gateway.example.com
+  adminDashboard:
+    enabled: false
 
-        - name: auth
-          image: nginx:alpine
-          replicas: 2
-          port: 8080
-          env:
-            - name: JWT_ISSUER
-              value: qa-auth
+  landingPage:
+    enabled: false
 
-        - name: users
-          image: nginx:alpine
-          replicas: 2
-          port: 8080
+  # Apps with DB
+  backend:
+    enabled: true
+    replicas: 2
+    port: 8080
+    env:
+      - name: ENV
+        value: qa
+    database:
+      version: "15"
+      storage: "1Gi"
+      dbName: backend_qa
+      username: backend
+      password: qapass123
+    migration:
+      enabled: true
+      image: postgres:15
+      command:
+        - /bin/sh
+        - -c
+        - "until pg_isready -h backend-db -U backend; do sleep 2; done && PGPASSWORD=$POSTGRES_PASSWORD psql -h backend-db -U backend -d backend_qa -c 'CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, name VARCHAR(255), email VARCHAR(255));' && echo 'Migration done'"
+    ingress:
+      enabled: true
+      host: qa-api.example.com
 
-        - name: notifications
-          image: nginx:alpine
-          replicas: 1
-          port: 8080
+  inventory:
+    enabled: false
 
-        - name: worker
-          image: nginx:alpine
-          replicas: 2
-          port: 8080
-          env:
-            - name: QUEUE_URL
-              value: "redis://redis:6379"
+  orders:
+    enabled: false
 
-        - name: redis
-          image: redis:7-alpine
-          replicas: 1
-          port: 6379
+  billing:
+    enabled: false
+
+  analytics:
+    enabled: false
+
+  # Multi-service Apps
+  platform:
+    enabled: true
+    services:
+      - name: gateway
+        image: nginx:alpine
+        replicas: 2
+        port: 80
+        env:
+          - name: AUTH_SERVICE
+            value: "http://auth:80"
+          - name: USER_SERVICE
+            value: "http://users:80"
+        ingress:
+          enabled: true
+          host: qa-gateway.example.com
+
+      - name: auth
+        image: nginx:alpine
+        replicas: 2
+        port: 8080
+        env:
+          - name: JWT_ISSUER
+            value: qa-auth
+
+      - name: users
+        image: nginx:alpine
+        replicas: 2
+        port: 8080
+
+      - name: notifications
+        image: nginx:alpine
+        replicas: 1
+        port: 8080
+
+      - name: worker
+        image: nginx:alpine
+        replicas: 2
+        port: 8080
+        env:
+          - name: QUEUE_URL
+            value: "redis://redis:6379"
+
+      - name: redis
+        image: redis:7-alpine
+        replicas: 1
+        port: 6379
+
+  search:
+    enabled: false
+
+  messaging:
+    enabled: false
+
+  monitoring:
+    enabled: false
+
+  cicd:
+    enabled: false

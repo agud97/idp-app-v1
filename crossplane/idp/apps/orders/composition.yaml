@@ -1,0 +1,322 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: orders-app-composition
+spec:
+  compositeTypeRef:
+    apiVersion: idp.example.com/v1alpha1
+    kind: XOrdersApp
+  mode: Pipeline
+  pipeline:
+    - step: render-resources
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $appName := "orders" }}
+            {{- $defaultImage := "nginx:alpine" }}
+            {{- $defaultPort := 8080 }}
+            {{- $defaultReplicas := 1 }}
+            {{- $defaultDbName := "orders_db" }}
+            {{- $envName := .observed.composite.resource.spec.environmentName | default "" }}
+            {{- $namespace := ternary (printf "%s-%s" $envName $appName) $appName (ne $envName "") }}
+            {{- $image := .observed.composite.resource.spec.image | default $defaultImage }}
+            {{- $port := .observed.composite.resource.spec.port | default $defaultPort }}
+            {{- $replicas := .observed.composite.resource.spec.replicas | default $defaultReplicas }}
+            {{- $db := .observed.composite.resource.spec.database }}
+            {{- $dbName := "" }}{{- if $db }}{{- $dbName = $db.dbName | default $defaultDbName }}{{- else }}{{- $dbName = $defaultDbName }}{{- end }}
+            {{- $dbUser := "" }}{{- if $db }}{{- $dbUser = $db.username | default "app" }}{{- else }}{{- $dbUser = "app" }}{{- end }}
+            {{- $dbPass := "" }}{{- if $db }}{{- $dbPass = $db.password | default "changeme123" }}{{- else }}{{- $dbPass = "changeme123" }}{{- end }}
+            {{- $dbVersion := "" }}{{- if $db }}{{- $dbVersion = $db.version | default "15" }}{{- else }}{{- $dbVersion = "15" }}{{- end }}
+            {{- $dbStorage := "" }}{{- if $db }}{{- $dbStorage = $db.storage | default "1Gi" }}{{- else }}{{- $dbStorage = "1Gi" }}{{- end }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-namespace
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: namespace
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: {{ $namespace }}
+                    labels:
+                      app: {{ $appName }}
+                      {{- if ne $envName "" }}
+                      environment: {{ $envName }}
+                      {{- end }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-db-secret
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ $appName }}-db-credentials
+                    namespace: {{ $namespace }}
+                  type: Opaque
+                  stringData:
+                    POSTGRES_DB: "{{ $dbName }}"
+                    POSTGRES_USER: "{{ $dbUser }}"
+                    POSTGRES_PASSWORD: "{{ $dbPass }}"
+                    DATABASE_URL: "postgres://{{ $dbUser }}:{{ $dbPass }}@{{ $appName }}-db:5432/{{ $dbName }}?sslmode=disable"
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-db-pvc
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-pvc
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: PersistentVolumeClaim
+                  metadata:
+                    name: {{ $appName }}-db-data
+                    namespace: {{ $namespace }}
+                  spec:
+                    accessModes:
+                      - ReadWriteOnce
+                    resources:
+                      requests:
+                        storage: {{ $dbStorage }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-db-deployment
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-deployment
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: {{ $appName }}-db
+                    namespace: {{ $namespace }}
+                    labels:
+                      app: {{ $appName }}-db
+                  spec:
+                    replicas: 1
+                    selector:
+                      matchLabels:
+                        app: {{ $appName }}-db
+                    template:
+                      metadata:
+                        labels:
+                          app: {{ $appName }}-db
+                      spec:
+                        containers:
+                          - name: postgres
+                            image: postgres:{{ $dbVersion }}
+                            ports:
+                              - containerPort: 5432
+                            envFrom:
+                              - secretRef:
+                                  name: {{ $appName }}-db-credentials
+                            volumeMounts:
+                              - name: data
+                                mountPath: /var/lib/postgresql/data
+                            readinessProbe:
+                              exec:
+                                command:
+                                  - pg_isready
+                                  - -U
+                                  - {{ $dbUser }}
+                                  - -d
+                                  - {{ $dbName }}
+                              initialDelaySeconds: 5
+                              periodSeconds: 5
+                        volumes:
+                          - name: data
+                            persistentVolumeClaim:
+                              claimName: {{ $appName }}-db-data
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-db-service
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: db-service
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: {{ $appName }}-db
+                    namespace: {{ $namespace }}
+                  spec:
+                    selector:
+                      app: {{ $appName }}-db
+                    ports:
+                      - port: 5432
+                        targetPort: 5432
+                    type: ClusterIP
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-deployment
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: deployment
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: {{ $appName }}
+                    namespace: {{ $namespace }}
+                    labels:
+                      app: {{ $appName }}
+                  spec:
+                    replicas: {{ $replicas }}
+                    selector:
+                      matchLabels:
+                        app: {{ $appName }}
+                    template:
+                      metadata:
+                        labels:
+                          app: {{ $appName }}
+                      spec:
+                        {{- if and .observed.composite.resource.spec.migration .observed.composite.resource.spec.migration.enabled }}
+                        initContainers:
+                          - name: migration
+                            image: {{ .observed.composite.resource.spec.migration.image }}
+                            {{- if .observed.composite.resource.spec.migration.command }}
+                            command: {{ .observed.composite.resource.spec.migration.command | toJson }}
+                            {{- end }}
+                            envFrom:
+                              - secretRef:
+                                  name: {{ $appName }}-db-credentials
+                              {{- if .observed.composite.resource.spec.env }}
+                              - configMapRef:
+                                  name: {{ $appName }}-config
+                              {{- end }}
+                        {{- end }}
+                        containers:
+                          - name: {{ $appName }}
+                            image: {{ $image }}
+                            ports:
+                              - containerPort: {{ $port }}
+                            envFrom:
+                              - secretRef:
+                                  name: {{ $appName }}-db-credentials
+                              {{- if .observed.composite.resource.spec.env }}
+                              - configMapRef:
+                                  name: {{ $appName }}-config
+                              {{- end }}
+                              {{- if .observed.composite.resource.spec.secrets }}
+                              - secretRef:
+                                  name: {{ $appName }}-secret
+                              {{- end }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-service
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: service
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: {{ $appName }}
+                    namespace: {{ $namespace }}
+                  spec:
+                    selector:
+                      app: {{ $appName }}
+                    ports:
+                      - port: 80
+                        targetPort: {{ $port }}
+                    type: ClusterIP
+            {{- if .observed.composite.resource.spec.env }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-configmap
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: configmap
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: ConfigMap
+                  metadata:
+                    name: {{ $appName }}-config
+                    namespace: {{ $namespace }}
+                  data:
+                    {{- range .observed.composite.resource.spec.env }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if .observed.composite.resource.spec.secrets }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-secret
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ $appName }}-secret
+                    namespace: {{ $namespace }}
+                  type: Opaque
+                  stringData:
+                    {{- range .observed.composite.resource.spec.secrets }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if and .observed.composite.resource.spec.ingress .observed.composite.resource.spec.ingress.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-ingress
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: ingress
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: {{ $appName }}
+                    namespace: {{ $namespace }}
+                  spec:
+                    rules:
+                      - host: {{ .observed.composite.resource.spec.ingress.host }}
+                        http:
+                          paths:
+                            - path: /
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: {{ $appName }}
+                                  port:
+                                    number: 80
+            {{- end }}

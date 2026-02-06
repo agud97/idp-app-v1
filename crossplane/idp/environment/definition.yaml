@@ -1,0 +1,652 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: CompositeResourceDefinition
+metadata:
+  name: xtestenvironments.idp.example.com
+spec:
+  group: idp.example.com
+  names:
+    kind: XTestEnvironment
+    plural: xtestenvironments
+  claimNames:
+    kind: TestEnvironment
+    plural: testenvironments
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: "Environment name (prefix for all apps)"
+
+                # Simple Apps
+                frontend:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                staticFiles:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                docs:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                adminDashboard:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                landingPage:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                # Apps with DB
+                backend:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    database:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        storage:
+                          type: string
+                        dbName:
+                          type: string
+                        username:
+                          type: string
+                        password:
+                          type: string
+                    migration:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: string
+                        command:
+                          type: array
+                          items:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                inventory:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    database:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        storage:
+                          type: string
+                        dbName:
+                          type: string
+                        username:
+                          type: string
+                        password:
+                          type: string
+                    migration:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: string
+                        command:
+                          type: array
+                          items:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                orders:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    database:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        storage:
+                          type: string
+                        dbName:
+                          type: string
+                        username:
+                          type: string
+                        password:
+                          type: string
+                    migration:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: string
+                        command:
+                          type: array
+                          items:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                billing:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    database:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        storage:
+                          type: string
+                        dbName:
+                          type: string
+                        username:
+                          type: string
+                        password:
+                          type: string
+                    migration:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: string
+                        command:
+                          type: array
+                          items:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                analytics:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    replicas:
+                      type: integer
+                    image:
+                      type: string
+                    port:
+                      type: integer
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    database:
+                      type: object
+                      properties:
+                        version:
+                          type: string
+                        storage:
+                          type: string
+                        dbName:
+                          type: string
+                        username:
+                          type: string
+                        password:
+                          type: string
+                    migration:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        image:
+                          type: string
+                        command:
+                          type: array
+                          items:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                        host:
+                          type: string
+
+                # Multi-service Apps
+                platform:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    services:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - image
+                        properties:
+                          name:
+                            type: string
+                          image:
+                            type: string
+                          replicas:
+                            type: integer
+                            default: 1
+                          port:
+                            type: integer
+                            default: 80
+                          env:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                          ingress:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              host:
+                                type: string
+
+                search:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    services:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - image
+                        properties:
+                          name:
+                            type: string
+                          image:
+                            type: string
+                          replicas:
+                            type: integer
+                            default: 1
+                          port:
+                            type: integer
+                            default: 80
+                          env:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                          ingress:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              host:
+                                type: string
+
+                messaging:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    services:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - image
+                        properties:
+                          name:
+                            type: string
+                          image:
+                            type: string
+                          replicas:
+                            type: integer
+                            default: 1
+                          port:
+                            type: integer
+                            default: 80
+                          env:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                          ingress:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              host:
+                                type: string
+
+                monitoring:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    services:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - image
+                        properties:
+                          name:
+                            type: string
+                          image:
+                            type: string
+                          replicas:
+                            type: integer
+                            default: 1
+                          port:
+                            type: integer
+                            default: 80
+                          env:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                          ingress:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              host:
+                                type: string
+
+                cicd:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    services:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                          - name
+                          - image
+                        properties:
+                          name:
+                            type: string
+                          image:
+                            type: string
+                          replicas:
+                            type: integer
+                            default: 1
+                          port:
+                            type: integer
+                            default: 80
+                          env:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                name:
+                                  type: string
+                                value:
+                                  type: string
+                          ingress:
+                            type: object
+                            properties:
+                              enabled:
+                                type: boolean
+                              host:
+                                type: string
+
+            status:
+              type: object
+              properties:
+                ready:
+                  type: boolean
