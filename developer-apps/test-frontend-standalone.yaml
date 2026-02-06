@@ -1,0 +1,16 @@
+# Standalone FrontendApp test (no TestEnvironment)
+apiVersion: idp.example.com/v1alpha1
+kind: FrontendApp
+metadata:
+  name: test-frontend-standalone
+  namespace: default
+spec:
+  replicas: 2
+  env:
+    - name: APP_NAME
+      value: frontend
+    - name: ENVIRONMENT
+      value: testing
+  ingress:
+    enabled: true
+    host: frontend.example.com

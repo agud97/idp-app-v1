@@ -1,0 +1,186 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: messaging-app-composition
+spec:
+  compositeTypeRef:
+    apiVersion: idp.example.com/v1alpha1
+    kind: XMessagingApp
+  mode: Pipeline
+  pipeline:
+    - step: render-resources
+      functionRef:
+        name: function-go-templating
+      input:
+        apiVersion: gotemplating.fn.crossplane.io/v1beta1
+        kind: GoTemplate
+        source: Inline
+        inline:
+          template: |
+            {{- $appName := "messaging" }}
+            {{- $envName := .observed.composite.resource.spec.environmentName | default "" }}
+            {{- $namespace := ternary (printf "%s-%s" $envName $appName) $appName (ne $envName "") }}
+            {{- $services := .observed.composite.resource.spec.services }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-namespace
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: namespace
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Namespace
+                  metadata:
+                    name: {{ $namespace }}
+                    labels:
+                      app: {{ $appName }}
+                      {{- if ne $envName "" }}
+                      environment: {{ $envName }}
+                      {{- end }}
+            {{- range $index, $svc := $services }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-{{ $svc.name }}-deployment
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $svc.name }}-deployment
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  metadata:
+                    name: {{ $svc.name }}
+                    namespace: {{ $namespace }}
+                    labels:
+                      app: {{ $svc.name }}
+                      app.kubernetes.io/part-of: {{ $appName }}
+                  spec:
+                    replicas: {{ $svc.replicas | default 1 }}
+                    selector:
+                      matchLabels:
+                        app: {{ $svc.name }}
+                    template:
+                      metadata:
+                        labels:
+                          app: {{ $svc.name }}
+                          app.kubernetes.io/part-of: {{ $appName }}
+                      spec:
+                        containers:
+                          - name: {{ $svc.name }}
+                            image: {{ $svc.image }}
+                            ports:
+                              - containerPort: {{ $svc.port | default 80 }}
+                            {{- if or $svc.env $svc.secrets }}
+                            envFrom:
+                              {{- if $svc.env }}
+                              - configMapRef:
+                                  name: {{ $svc.name }}-config
+                              {{- end }}
+                              {{- if $svc.secrets }}
+                              - secretRef:
+                                  name: {{ $svc.name }}-secret
+                              {{- end }}
+                            {{- end }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-{{ $svc.name }}-service
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $svc.name }}-service
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Service
+                  metadata:
+                    name: {{ $svc.name }}
+                    namespace: {{ $namespace }}
+                    labels:
+                      app: {{ $svc.name }}
+                      app.kubernetes.io/part-of: {{ $appName }}
+                  spec:
+                    selector:
+                      app: {{ $svc.name }}
+                    ports:
+                      - port: 80
+                        targetPort: {{ $svc.port | default 80 }}
+                    type: ClusterIP
+            {{- if $svc.env }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-{{ $svc.name }}-configmap
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $svc.name }}-configmap
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: ConfigMap
+                  metadata:
+                    name: {{ $svc.name }}-config
+                    namespace: {{ $namespace }}
+                  data:
+                    {{- range $svc.env }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if $svc.secrets }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-{{ $svc.name }}-secret
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $svc.name }}-secret
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: v1
+                  kind: Secret
+                  metadata:
+                    name: {{ $svc.name }}-secret
+                    namespace: {{ $namespace }}
+                  type: Opaque
+                  stringData:
+                    {{- range $svc.secrets }}
+                    {{ .name }}: "{{ .value }}"
+                    {{- end }}
+            {{- end }}
+            {{- if and $svc.ingress $svc.ingress.enabled }}
+            ---
+            apiVersion: kubernetes.crossplane.io/v1alpha2
+            kind: Object
+            metadata:
+              name: {{ $namespace }}-{{ $svc.name }}-ingress
+              annotations:
+                gotemplating.fn.crossplane.io/composition-resource-name: {{ $svc.name }}-ingress
+            spec:
+              forProvider:
+                manifest:
+                  apiVersion: networking.k8s.io/v1
+                  kind: Ingress
+                  metadata:
+                    name: {{ $svc.name }}
+                    namespace: {{ $namespace }}
+                  spec:
+                    rules:
+                      - host: {{ $svc.ingress.host }}
+                        http:
+                          paths:
+                            - path: {{ $svc.ingress.path | default "/" }}
+                              pathType: Prefix
+                              backend:
+                                service:
+                                  name: {{ $svc.name }}
+                                  port:
+                                    number: 80
+            {{- end }}
+            {{- end }}
