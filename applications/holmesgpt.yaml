@@ -1,0 +1,29 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: holmesgpt
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://robusta-charts.storage.googleapis.com
+    chart: holmes
+    targetRevision: "0.6.0"
+    helm:
+      values: |
+        additionalEnvVars:
+          - name: MODEL
+            value: "openai/qwen3-coder"
+          - name: OPENAI_BASE_URL
+            value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
+          - name: OPENAI_API_KEY
+            value: "not-needed"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: holmesgpt
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

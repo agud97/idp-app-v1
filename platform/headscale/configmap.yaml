@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: headscale-config
+  namespace: headscale
+data:
+  config.yaml: |
+    server_url: http://194.58.110.52:30080
+    listen_addr: 0.0.0.0:8080
+    metrics_listen_addr: 0.0.0.0:9090
+    grpc_listen_addr: 0.0.0.0:50443
+    grpc_allow_insecure: true
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: 100.64.0.0/10
+      v6: fd7a:115c:a1e0::/48
+    derp:
+      server:
+        enabled: false
+      urls:
+        - https://controlplane.tailscale.com/derpmap/default
+      auto_update_enabled: true
+      update_frequency: 24h
+    disable_check_updates: true
+    ephemeral_node_inactivity_timeout: 30m
+    database:
+      type: sqlite3
+      sqlite:
+        path: /var/lib/headscale/db.sqlite
+    dns:
+      override_local_dns: false
+      base_domain: tailnet.local
+      magic_dns: true
+      nameservers:
+        - 1.1.1.1
+        - 8.8.8.8
+    log:
+      level: info

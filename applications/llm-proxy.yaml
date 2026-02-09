@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: llm-proxy
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agud97/idp-app-v1.git
+    path: platform/llm-proxy
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: llm-proxy
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+        - /stringData
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true

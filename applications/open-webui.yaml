@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: open-webui
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://helm.openwebui.com
+    chart: open-webui
+    targetRevision: "5.18.0"
+    helm:
+      values: |
+        ollama:
+          enabled: false
+        openaiBaseApiUrls:
+          - http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1
+        extraEnvVars:
+          - name: OPENAI_API_KEY
+            value: "not-needed"
+          - name: VECTOR_DB
+            value: "qdrant"
+          - name: QDRANT_URI
+            value: "http://qdrant.qdrant.svc.cluster.local:6333"
+          - name: RAG_EMBEDDING_ENGINE
+            value: ""
+          - name: RAG_EMBEDDING_MODEL
+            value: "sentence-transformers/all-MiniLM-L6-v2"
+        persistence:
+          enabled: true
+          size: 5Gi
+          storageClass: openebs-hostpath
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open-webui
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
