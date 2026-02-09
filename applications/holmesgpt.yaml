@@ -13,7 +13,7 @@ spec:
       values: |
         additionalEnvVars:
           - name: MODEL
-            value: "openai/qwen3-coder"
+            value: "openai/qwen3-coder-30b-a3b-instruct-mlx"
           - name: OPENAI_BASE_URL
             value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
