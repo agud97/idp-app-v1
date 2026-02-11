@@ -614,6 +614,362 @@ kubectl patch deployment holmesgpt-holmes -n holmesgpt --type=json -p='[
 ]'
 ```
 
+## Инструкция: Переключение на другую LLM
+
+### Текущая схема
+
+```
+HolmesGPT  ──→  llm-proxy (nginx) ──→  tailscale ──→  LMStudio (ноутбук)
+Open WebUI ──→  llm-proxy (nginx) ──→  tailscale ──→  LMStudio (ноутбук)
+```
+
+llm-proxy нужен только для доступа к LLM через tailscale VPN. Если LLM доступна напрямую из кластера (интернет или внутренняя сеть) — llm-proxy можно обойти.
+
+---
+
+### Вариант A: Публичная LLM (OpenAI, Anthropic, Google и др.)
+
+LLM доступна через интернет, llm-proxy **не нужен**.
+
+```
+HolmesGPT  ──→  https://api.openai.com/v1
+Open WebUI ──→  https://api.openai.com/v1
+```
+
+#### A.1. HolmesGPT
+
+Отредактировать `applications/holmesgpt.yaml`:
+
+```yaml
+    helm:
+      values: |
+        additionalEnvVars:
+          - name: MODEL
+            value: "openai/gpt-4o"                          # litellm provider/model
+          - name: OPENAI_API_BASE
+            value: "https://api.openai.com/v1"               # endpoint провайдера
+          - name: OPENAI_API_KEY
+            value: "sk-..."                                   # реальный API-ключ
+```
+
+**Формат MODEL для litellm:**
+
+| Провайдер | MODEL | OPENAI_API_BASE |
+|---|---|---|
+| OpenAI | `openai/gpt-4o` | `https://api.openai.com/v1` |
+| Anthropic | `anthropic/claude-sonnet-4-5-20250929` | не нужен (litellm знает endpoint) |
+| Google Gemini | `gemini/gemini-2.0-flash` | не нужен |
+| Azure OpenAI | `azure/my-deployment` | `https://xxx.openai.azure.com` |
+
+> **Примечание:** Для Anthropic и Google litellm использует свои env vars:
+> - Anthropic: `ANTHROPIC_API_KEY`
+> - Google: `GEMINI_API_KEY` или `GOOGLE_API_KEY`
+
+Пример для Anthropic:
+
+```yaml
+        additionalEnvVars:
+          - name: MODEL
+            value: "anthropic/claude-sonnet-4-5-20250929"
+          - name: ANTHROPIC_API_KEY
+            value: "sk-ant-..."
+```
+
+Применить:
+
+```bash
+cd ~/proj/cross/idp-app-v1
+vim applications/holmesgpt.yaml                    # внести изменения
+kubectl apply -f applications/holmesgpt.yaml       # применить в ArgoCD
+```
+
+Дождаться пересоздания пода:
+
+```bash
+kubectl get pods -n holmesgpt -w
+```
+
+Проверить:
+
+```bash
+kubectl run test-model --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s --max-time 10 http://holmesgpt-holmes.holmesgpt.svc:80/api/model
+
+kubectl run test-chat --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s --max-time 120 -X POST http://holmesgpt-holmes.holmesgpt.svc:80/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"ask": "List all namespaces in this cluster"}'
+```
+
+#### A.2. Open WebUI
+
+Отредактировать `applications/open-webui.yaml`:
+
+```yaml
+    helm:
+      values: |
+        ollama:
+          enabled: false
+        openaiBaseApiUrls:
+          - https://api.openai.com/v1                        # endpoint провайдера
+        extraEnvVars:
+          - name: OPENAI_API_KEY
+            value: "sk-..."                                   # реальный API-ключ
+          - name: VECTOR_DB
+            value: "qdrant"
+          - name: QDRANT_URI
+            value: "http://qdrant.qdrant.svc.cluster.local:6333"
+          - name: RAG_EMBEDDING_ENGINE
+            value: ""
+          - name: RAG_EMBEDDING_MODEL
+            value: "sentence-transformers/all-MiniLM-L6-v2"
+```
+
+Применить:
+
+```bash
+vim applications/open-webui.yaml
+kubectl apply -f applications/open-webui.yaml
+kubectl get pods -n open-webui -w
+```
+
+Проверить — открыть веб-интерфейс и отправить сообщение.
+
+#### A.3. Несколько провайдеров в Open WebUI
+
+Open WebUI поддерживает несколько LLM-эндпоинтов одновременно:
+
+```yaml
+        openaiBaseApiUrls:
+          - https://api.openai.com/v1
+          - https://api.anthropic.com/v1
+        extraEnvVars:
+          - name: OPENAI_API_KEYS
+            value: "sk-openai-...;sk-ant-..."                 # через точку с запятой
+```
+
+#### A.4. Безопасное хранение API-ключей
+
+Вместо хранения ключей в открытом виде в yaml, использовать Kubernetes Secret:
+
+```bash
+# Создать секрет
+kubectl create secret generic llm-api-keys -n holmesgpt \
+  --from-literal=OPENAI_API_KEY=sk-...
+
+# В holmesgpt.yaml сослаться через valueFrom:
+```
+
+```yaml
+        additionalEnvVars:
+          - name: MODEL
+            value: "openai/gpt-4o"
+          - name: OPENAI_API_BASE
+            value: "https://api.openai.com/v1"
+          - name: OPENAI_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: llm-api-keys
+                key: OPENAI_API_KEY
+```
+
+> **Важно:** Добавить `ignoreDifferences` для Secret в ArgoCD Application, чтобы ArgoCD не перезаписывал секрет:
+> ```yaml
+>   ignoreDifferences:
+>     - group: ""
+>       kind: Secret
+>       jsonPointers:
+>         - /data
+> ```
+
+---
+
+### Вариант B: On-prem LLM, доступная из кластера по сети
+
+LLM развёрнута на сервере, доступном из кластера напрямую (без VPN). Например: vLLM, Ollama, text-generation-inference на внутреннем сервере.
+
+```
+HolmesGPT  ──→  http://192.168.1.100:8000/v1
+Open WebUI ──→  http://192.168.1.100:8000/v1
+```
+
+#### B.1. HolmesGPT
+
+```yaml
+        additionalEnvVars:
+          - name: MODEL
+            value: "openai/my-model-name"                    # openai/ prefix для litellm
+          - name: OPENAI_API_BASE
+            value: "http://192.168.1.100:8000/v1"            # адрес LLM-сервера
+          - name: OPENAI_API_KEY
+            value: "not-needed"                               # или реальный ключ
+```
+
+> **Формат MODEL:** Для любой OpenAI-совместимой LLM (vLLM, Ollama, LMStudio, text-generation-inference) используйте префикс `openai/` + имя модели. litellm будет обращаться к `OPENAI_API_BASE`.
+
+#### B.2. Open WebUI
+
+```yaml
+        openaiBaseApiUrls:
+          - http://192.168.1.100:8000/v1
+        extraEnvVars:
+          - name: OPENAI_API_KEY
+            value: "not-needed"
+```
+
+#### B.3. Проверка связности перед переключением
+
+```bash
+# Проверить что LLM доступна из кластера
+kubectl run test-llm --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s --max-time 10 http://192.168.1.100:8000/v1/models
+
+# Если таймаут — LLM недоступна из кластера, нужен VPN или другой маршрут
+```
+
+---
+
+### Вариант C: On-prem LLM через tailscale (текущая схема)
+
+LLM на ноутбуке/сервере за NAT, доступ только через headscale/tailscale VPN.
+
+```
+HolmesGPT  ──→  llm-proxy ──→  tailscale ──→  LLM (100.64.0.x)
+Open WebUI ──→  llm-proxy ──→  tailscale ──→  LLM (100.64.0.x)
+```
+
+#### C.1. Сменить целевой IP/порт LLM
+
+Если LLM переехала на другой tailscale-хост:
+
+```bash
+# Обновить IP в ConfigMap llm-proxy
+kubectl edit configmap llm-proxy-config -n llm-proxy
+# Изменить LAPTOP_TAILSCALE_IP на новый IP
+```
+
+Или отредактировать в git `platform/llm-proxy/configmap.yaml` и запушить — ArgoCD подхватит.
+
+После изменения ConfigMap — перезапустить pod:
+
+```bash
+kubectl rollout restart deployment llm-proxy -n llm-proxy
+```
+
+#### C.2. Сменить модель
+
+Если LLM та же (LMStudio/Ollama), но загружена другая модель:
+
+```yaml
+# В applications/holmesgpt.yaml — обновить MODEL
+          - name: MODEL
+            value: "openai/new-model-name"
+```
+
+> LMStudio обычно игнорирует имя модели в запросе и использует загруженную. Но для корректного логирования лучше указывать актуальное имя.
+
+#### C.3. Добавить новый tailscale-хост с LLM
+
+1. Зарегистрировать хост в headscale:
+```bash
+kubectl exec -n headscale deploy/headscale -- headscale preauthkeys create --user laptop --reusable --expiration 24h
+# Использовать полученный ключ для подключения tailscale на новом хосте
+```
+
+2. Проверить что хост появился:
+```bash
+kubectl exec -n headscale deploy/headscale -- headscale nodes list
+```
+
+3. Обновить IP в ConfigMap (см. C.1)
+
+---
+
+### Вариант D: Переключение между режимами (VPN ↔ Интернет)
+
+#### D.1. С tailscale (LMStudio) на публичный API (OpenAI)
+
+1. Обновить `applications/holmesgpt.yaml` — указать OpenAI endpoint и ключ (см. вариант A.1)
+2. Обновить `applications/open-webui.yaml` — указать OpenAI endpoint (см. вариант A.2)
+3. Применить оба:
+```bash
+kubectl apply -f applications/holmesgpt.yaml
+kubectl apply -f applications/open-webui.yaml
+```
+4. llm-proxy можно оставить (не мешает) или удалить приложение из ArgoCD
+
+#### D.2. С публичного API обратно на tailscale (LMStudio)
+
+1. Убедиться что llm-proxy работает и tailscale-туннель активен:
+```bash
+kubectl exec -n llm-proxy deploy/llm-proxy -c tailscale-sidecar -- tailscale status
+kubectl exec -n llm-proxy deploy/llm-proxy -c tailscale-sidecar -- wget -q -O- --timeout=10 http://100.64.0.2:1234/v1/models
+```
+
+2. Вернуть в `applications/holmesgpt.yaml`:
+```yaml
+          - name: MODEL
+            value: "openai/qwen3-coder-30b-a3b-instruct-mlx"
+          - name: OPENAI_API_BASE
+            value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
+          - name: OPENAI_API_KEY
+            value: "not-needed"
+```
+
+3. Вернуть в `applications/open-webui.yaml`:
+```yaml
+        openaiBaseApiUrls:
+          - http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1
+        extraEnvVars:
+          - name: OPENAI_API_KEY
+            value: "not-needed"
+```
+
+4. Применить:
+```bash
+kubectl apply -f applications/holmesgpt.yaml
+kubectl apply -f applications/open-webui.yaml
+```
+
+---
+
+### Чеклист после переключения LLM
+
+```bash
+export KUBECONFIG=~/proj/cross/kubeconfig_6005021
+
+# 1. ArgoCD — всё в sync?
+kubectl get applications -n argocd
+
+# 2. Поды живы?
+kubectl get pods -n holmesgpt
+kubectl get pods -n open-webui
+
+# 3. HolmesGPT — правильная модель?
+kubectl run test-model --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s --max-time 10 http://holmesgpt-holmes.holmesgpt.svc:80/api/model
+
+# 4. HolmesGPT — тестовый запрос
+kubectl run test-chat --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s --max-time 120 -X POST http://holmesgpt-holmes.holmesgpt.svc:80/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"ask": "List all namespaces"}'
+
+# 5. Open WebUI — открыть в браузере и отправить тестовое сообщение
+
+# 6. Env vars корректны?
+kubectl get deployment -n holmesgpt holmesgpt-holmes \
+  -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}={.value}{"\n"}{end}'
+
+# 7. Логи без ошибок?
+kubectl logs -n holmesgpt deploy/holmesgpt-holmes --tail=20
+kubectl logs -n open-webui open-webui-0 -c open-webui --tail=20
+
+# 8. Custom runbooks на месте? (после переключения holmesgpt)
+kubectl exec -n holmesgpt deploy/holmesgpt-holmes -- ls /app/holmes/plugins/runbooks/
+# Ожидаемый результат: custom-runbooks.yaml, general.yaml, jira.yaml
+```
+
 ## Известные проблемы и решения
 
 ### 1. tailscale ping работает, но curl/wget таймаутится
