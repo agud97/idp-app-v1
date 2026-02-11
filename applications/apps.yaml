@@ -1,0 +1,28 @@
+# App of Apps - корневое приложение ArgoCD
+# Автоматически создаёт все Applications из папки applications/
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agud97/idp-app-v1.git
+    targetRevision: HEAD
+    path: applications
+    directory:
+      recurse: true
+      exclude: "apps.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
