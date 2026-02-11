@@ -18,6 +18,12 @@ spec:
             value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
             value: "not-needed"
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/template/spec/volumes
+        - /spec/template/spec/containers/0/volumeMounts
   destination:
     server: https://kubernetes.default.svc
     namespace: holmesgpt
