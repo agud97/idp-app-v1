@@ -1,0 +1,71 @@
+# Knowledge Base Toolset для HolmesGPT
+# Интеграция с Open WebUI RAG API
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knowledge-base-toolset
+  namespace: holmesgpt
+data:
+  knowledge-base-toolset.yaml: |
+    toolsets:
+      knowledge/base:
+        description: |
+          Search organization knowledge base for runbooks, SOPs, post-mortems.
+          Use this tool BEFORE executing actions to find relevant procedures.
+
+        prerequisites:
+          - command: "curl --version"
+
+        tools:
+          - name: "search_runbooks"
+            description: |
+              Search runbooks and SOPs from knowledge base.
+              Parameters:
+              - query: Search query (required)
+              - top_k: Number of results (default: 3)
+            command: >
+              curl -s --max-time 30
+              'http://open-webui.open-webui.svc:8080/api/v1/retrieval/query'
+              -H "Authorization: Bearer {{ api_key | default('') }}"
+              -H "Content-Type: application/json"
+              -d '{"query": "{{ query }}", "top_k": {{ top_k | default("3") }}, "collection_name": "runbooks"}'
+
+          - name: "search_incident_history"
+            description: |
+              Search post-mortems and incident history.
+              Parameters:
+              - query: Description of issue (required)
+              - top_k: Number of results (default: 5)
+            command: >
+              curl -s --max-time 30
+              'http://open-webui.open-webui.svc:8080/api/v1/retrieval/query'
+              -H "Authorization: Bearer {{ api_key | default('') }}"
+              -H "Content-Type: application/json"
+              -d '{"query": "{{ query }}", "top_k": {{ top_k | default("5") }}, "collection_name": "incidents"}'
+
+          - name: "search_knowledge"
+            description: |
+              Universal search across all knowledge base.
+              Parameters:
+              - query: Search query (required)
+              - top_k: Number of results (default: 5)
+            command: >
+              curl -s --max-time 30
+              'http://open-webui.open-webui.svc:8080/api/v1/retrieval/query'
+              -H "Authorization: Bearer {{ api_key | default('') }}"
+              -H "Content-Type: application/json"
+              -d '{"query": "{{ query }}", "top_k": {{ top_k | default("5") }}'
+
+          - name: "add_note"
+            description: |
+              Add a note to knowledge base.
+              Parameters:
+              - content: Note content (required)
+              - tags: Tags (optional)
+            command: >
+              curl -s --max-time 10
+              'http://open-webui.open-webui.svc:8080/api/v1/documents/create'
+              -H "Authorization: Bearer {{ api_key | default('') }}"
+              -H "Content-Type: application/json"
+              -d '{"content": "{{ content }}", "tags": "{{ tags | default("incident-note") }}", "collection_name": "notes"}'

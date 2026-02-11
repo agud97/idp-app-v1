@@ -1,3 +1,6 @@
+# HolmesGPT - ArgoCD Application
+# Обновлено: версия 0.19.0 + toolsets для VictoriaMetrics/VictoriaLogs
+
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,16 +11,82 @@ spec:
   source:
     repoURL: https://robusta-charts.storage.googleapis.com
     chart: holmes
-    targetRevision: "0.6.0"
+    targetRevision: "0.19.0"
     helm:
       values: |
+        image:
+          repository: robustadev/holmes
+          tag: "0.19.0"
+
+        # LLM конфигурация
         additionalEnvVars:
           - name: MODEL
-            value: "openai/qwen3-coder-30b-a3b-instruct-mlx"
+            value: "openai/qwen2.5-32b"
           - name: OPENAI_API_BASE
             value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
             value: "not-needed"
+          - name: ALLOWED_TOOLSETS
+            value: "kubernetes/core,kubernetes/logs,prometheus/metrics,victorialogs/logs,knowledge/base"
+          - name: INTERACTIVE_MODE
+            value: "true"
+          - name: REQUIRE_CONFIRMATION
+            value: "true"
+          - name: AUTO_SEARCH_KNOWLEDGE
+            value: "true"
+
+        # Toolsets
+        toolsets:
+          kubernetes/core:
+            enabled: true
+          kubernetes/logs:
+            enabled: true
+          prometheus/metrics:
+            enabled: true
+            config:
+              prometheus_url: "http://vm-k8s-stack-victoria-metrics-k8s-stack-vmsingle.monitoring.svc:8429"
+
+        # Service Account
+        createServiceAccount: true
+        serviceAccount:
+          create: true
+          name: holmesgpt
+
+        # RBAC
+        rbac:
+          create: true
+          rules:
+            - apiGroups: [""]
+              resources: ["pods", "pods/log", "pods/exec", "events", "namespaces", "nodes", "services", "configmaps", "secrets"]
+              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+            - apiGroups: ["apps"]
+              resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+              verbs: ["get", "list", "watch", "update", "patch"]
+            - apiGroups: ["batch"]
+              resources: ["jobs", "cronjobs"]
+              verbs: ["get", "list", "watch", "create", "delete"]
+            - apiGroups: ["networking.k8s.io"]
+              resources: ["ingresses", "networkpolicies"]
+              verbs: ["get", "list", "watch"]
+            - apiGroups: ["metrics.k8s.io"]
+              resources: ["pods", "nodes"]
+              verbs: ["get", "list"]
+
+        # Service
+        service:
+          type: ClusterIP
+          port: 80
+          targetPort: 5050
+
+        # Resources
+        resources:
+          requests:
+            memory: "2048Mi"
+            cpu: "500m"
+          limits:
+            memory: "4096Mi"
+            cpu: "2000m"
+
   ignoreDifferences:
     - group: apps
       kind: Deployment

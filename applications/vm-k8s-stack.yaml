@@ -1,0 +1,98 @@
+# VictoriaMetrics K8s Stack - ArgoCD Application
+# Включает: VMSingle, VMAgent, VMAlert, VMAlertmanager, Grafana
+#
+# ВАЖНО: Перед применением установить CRD:
+# helm repo add vm https://victoriametrics.github.io/helm-charts/
+# helm show crds vm/victoria-metrics-k8s-stack --version 0.45.0 | kubectl apply -f -
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vm-k8s-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  source:
+    repoURL: https://victoriametrics.github.io/helm-charts
+    chart: victoria-metrics-k8s-stack
+    targetRevision: "0.45.0"
+    helm:
+      values: |
+        # VMSingle - хранилище метрик
+        vmsingle:
+          enabled: true
+          spec:
+            retentionPeriod: "15d"
+            storage:
+              storageClassName: openebs-hostpath
+              resources:
+                requests:
+                  storage: 50Gi
+            resources:
+              requests:
+                cpu: 200m
+                memory: 512Mi
+              limits:
+                memory: 2Gi
+
+        # VMAgent - сбор метрик
+        vmagent:
+          enabled: true
+          spec:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                memory: 512Mi
+
+        # VMAlert - алертинг
+        vmalert:
+          enabled: true
+
+        # VMAlertmanager
+        alertmanager:
+          enabled: true
+          spec:
+            storage:
+              storageClassName: openebs-hostpath
+              resources:
+                requests:
+                  storage: 5Gi
+
+        # Grafana
+        grafana:
+          enabled: true
+          adminPassword: "admin"
+          persistence:
+            enabled: true
+            storageClassName: openebs-hostpath
+            size: 5Gi
+          sidecar:
+            datasources:
+              enabled: true
+            dashboards:
+              enabled: true
+          plugins:
+            - victoriametrics-datasource
+            - victoriametrics-logs-datasource
+
+        defaultRules:
+          create: true
+
+        victoria-metrics-operator:
+          enabled: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - Replace=true

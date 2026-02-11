@@ -1,0 +1,78 @@
+# VictoriaLogs Toolset для HolmesGPT
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: victorialogs-toolset
+  namespace: holmesgpt
+data:
+  victorialogs-toolset.yaml: |
+    toolsets:
+      victorialogs/logs:
+        description: "Query application logs from VictoriaLogs using LogsQL"
+        prerequisites:
+          - command: "curl --version"
+
+        tools:
+          - name: "query_logs"
+            description: |
+              Query logs from VictoriaLogs for a specific namespace and pod.
+              Parameters:
+              - namespace: Kubernetes namespace (required)
+              - pod: Pod name pattern (optional)
+              - filter: Additional LogsQL filter (optional)
+              - limit: Number of log lines (default: 200)
+              - start: Time range (default: 1h)
+            command: >
+              curl -s --max-time 30
+              'http://vls-victoria-logs-single-server.victorialogs.svc:9428/select/logsql/query'
+              --data-urlencode 'query=kubernetes_namespace_name:{{ namespace }}{{ if pod }} AND kubernetes_pod_name:{{ pod }}{{ end }}{{ if filter }} AND {{ filter }}{{ end }}'
+              --data-urlencode 'limit={{ limit | default("200") }}'
+              --data-urlencode 'start={{ start | default("1h") }}'
+
+          - name: "query_error_logs"
+            description: |
+              Query error logs from VictoriaLogs for a namespace.
+              Parameters:
+              - namespace: Kubernetes namespace (required)
+              - limit: Number of log lines (default: 100)
+              - start: Time range (default: 1h)
+            command: >
+              curl -s --max-time 30
+              'http://vls-victoria-logs-single-server.victorialogs.svc:9428/select/logsql/query'
+              --data-urlencode 'query=kubernetes_namespace_name:{{ namespace }} AND (error OR panic OR fatal OR exception OR traceback OR OOMKilled)'
+              --data-urlencode 'limit={{ limit | default("100") }}'
+              --data-urlencode 'start={{ start | default("1h") }}'
+
+          - name: "list_log_streams"
+            description: "Get available log streams from VictoriaLogs"
+            command: >
+              curl -s --max-time 10
+              'http://vls-victoria-logs-single-server.victorialogs.svc:9428/select/logsql/streams?query=*&limit=50'
+
+          - name: "search_logs"
+            description: |
+              Search for specific text in logs.
+              Parameters:
+              - text: Text pattern to search (required)
+              - namespace: Kubernetes namespace (optional)
+              - limit: Number of results (default: 100)
+              - start: Time range (default: 1h)
+            command: >
+              curl -s --max-time 30
+              'http://vls-victoria-logs-single-server.victorialogs.svc:9428/select/logsql/query'
+              --data-urlencode 'query={{ if namespace }}kubernetes_namespace_name:{{ namespace }} AND {{ end }}{{ text }}'
+              --data-urlencode 'limit={{ limit | default("100") }}'
+              --data-urlencode 'start={{ start | default("1h") }}'
+
+          - name: "logs_stats"
+            description: |
+              Get log statistics for a namespace.
+              Parameters:
+              - namespace: Kubernetes namespace (required)
+              - start: Time range (default: 1h)
+            command: >
+              curl -s --max-time 30
+              'http://vls-victoria-logs-single-server.victorialogs.svc:9428/select/logsql/query'
+              --data-urlencode 'query=kubernetes_namespace_name:{{ namespace }} | stats by (kubernetes_pod_name) count()'
+              --data-urlencode 'start={{ start | default("1h") }}'

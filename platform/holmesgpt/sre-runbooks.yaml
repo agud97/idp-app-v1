@@ -1,0 +1,165 @@
+# SRE Runbooks для HolmesGPT
+# Расширенные runbooks с интеграцией VictoriaMetrics/VictoriaLogs
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sre-runbooks
+  namespace: holmesgpt
+data:
+  sre-runbooks.yaml: |
+    runbooks:
+      # ===========================================
+      # Общий workflow для всех инцидентов
+      # ===========================================
+      - match:
+          issue_name: ".*"
+        instructions: |
+          ОБЩИЙ WORKFLOW:
+
+          1. ПОИСК В БАЗЕ ЗНАНИЙ:
+             - search_runbooks с описанием проблемы
+             - search_incident_history для похожих инцидентов
+
+          2. СБОР ДАННЫХ (без подтверждения):
+             - kubectl get pods -n {{ namespace }}
+             - kubectl describe pod <pod>
+             - kubectl logs <pod> --tail=100
+             - Запрос метрик через prometheus/metrics
+             - Запрос логов через victorialogs/logs
+
+          3. ПРЕДЛОЖЕНИЕ ДЕЙСТВИЙ (с подтверждением):
+             Перед любой изменяющей командой запросить подтверждение
+
+      # ===========================================
+      # Проблемы с памятью
+      # ===========================================
+      - match:
+          issue_name: ".*OOMKilled.*|.*OutOfMemory.*|.*memory.*exceeded.*|.*HighMemory.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ OOM:
+
+          1. ПОИСК В БАЗЕ ЗНАНИЙ:
+             - search_runbooks("OOMKilled memory")
+
+          2. СБОР ДАННЫХ:
+             - kubectl describe pod <pod> -n {{ namespace }}
+             - kubectl top pods -n {{ namespace }} --sort-by=memory
+             - Метрики: container_memory_working_set_bytes{namespace="{{ namespace }}"}
+             - Логи: "out of memory" OR "OOMKilled"
+
+          3. АНАЛИЗ:
+             - Сравнить usage с limits
+             - kube_pod_container_resource_limits{resource="memory"}
+
+          4. ПРЕДЛОЖЕНИЕ (с подтверждением):
+             "Найден OOMKilled. Увеличить memory limit?"
+
+      # ===========================================
+      # CrashLoopBackOff
+      # ===========================================
+      - match:
+          issue_name: ".*CrashLoopBackOff.*|.*crash.*loop.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ CrashLoopBackOff:
+
+          1. ПОИСК В БАЗЕ ЗНАНИЙ:
+             - search_runbooks("CrashLoopBackOff")
+
+          2. СБОР ДАННЫХ:
+             - kubectl describe pod <pod> -n {{ namespace }}
+             - kubectl logs <pod> -n {{ namespace }} --previous
+             - Логи через VictoriaLogs: error logs for pod
+
+          3. АНАЛИЗ Exit Code:
+             - Exit 0: Проверить команду запуска
+             - Exit 1: Анализ логов приложения
+             - Exit 137: OOMKilled
+             - Exit 139: Segmentation fault
+
+      # ===========================================
+      # Проблемы с CPU
+      # ===========================================
+      - match:
+          issue_name: ".*HighCPU.*|.*CPUThrottling.*|.*cpu.*throttl.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ CPU:
+
+          1. Метрики через prometheus/metrics:
+             - container_cpu_usage_seconds_total
+             - container_cpu_cfs_throttled_periods_total
+
+          2. kubectl top pods -n {{ namespace }} --sort-by=cpu
+
+          3. Рассчитать throttling rate
+
+      # ===========================================
+      # HTTP 5xx ошибки
+      # ===========================================
+      - match:
+          issue_name: ".*5xx.*|.*502.*|.*503.*|.*504.*|.*gateway.*timeout.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ HTTP ошибок:
+
+          1. Логи через VictoriaLogs:
+             - Фильтр: "500" OR "502" OR "503" OR "504"
+
+          2. Метрики nginx/ingress:
+             - nginx_ingress_controller_requests{status=~"5.."}
+
+          3. Проверить upstream поды:
+             - kubectl get pods -l app=<service>
+
+      # ===========================================
+      # Проблемы с дисками
+      # ===========================================
+      - match:
+          issue_name: ".*disk.*|.*volume.*|.*pvc.*|.*storage.*|.*no.*space.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ DISK:
+
+          1. Метрики PVC:
+             - kubelet_volume_stats_used_bytes
+             - kubelet_volume_stats_capacity_bytes
+
+          2. kubectl get pvc -n {{ namespace }}
+
+          3. Логи: "no space left on device"
+
+      # ===========================================
+      # Проблемы с нодами
+      # ===========================================
+      - match:
+          issue_name: ".*node.*not.*ready.*|.*NodeNotReady.*|.*node.*down.*"
+        instructions: |
+          РАССЛЕДОВАНИЕ NODE:
+
+          1. kubectl get nodes -o wide
+          2. kubectl describe node <node-name>
+          3. Метрики: kube_node_status_condition, node_memory_MemAvailable_bytes
+
+      # ===========================================
+      # Tailscale/LLM-Proxy (существующий runbook)
+      # ===========================================
+      - match:
+          issue_name: ".*tailscale.*|.*llm-proxy.*|.*vpn.*"
+        instructions: |
+          This issue may be related to the Tailscale VPN tunnel.
+          Check:
+          1. Verify TS_USERSPACE is set to false in llm-proxy deployment.
+          2. Check if tailscale0 interface exists.
+          3. Run tailscale status to check peer connectivity.
+          4. If nginx shows upstream timed out, the tailscale tunnel is broken.
+
+      # ===========================================
+      # LLM connectivity (существующий runbook)
+      # ===========================================
+      - match:
+          issue_name: ".*holmesgpt.*|.*litellm.*|.*openai.*|.*lmstudio.*"
+        instructions: |
+          LLM connectivity chain: holmesgpt -> llm-proxy (nginx) -> tailscale -> laptop (LMStudio).
+          Check:
+          1. OPENAI_API_BASE env var in holmesgpt.
+          2. llm-proxy connectivity.
+          3. tailscale0 interface.
+          4. If 403 unsupported_country error, litellm hits real OpenAI.

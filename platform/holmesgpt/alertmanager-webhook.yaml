@@ -1,0 +1,140 @@
+# Alertmanager -> HolmesGPT Bridge
+# Автоматическое расследование firing alerts
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: holmes-alertmanager-bridge
+  namespace: holmesgpt
+data:
+  bridge.py: |
+    #!/usr/bin/env python3
+    """Alertmanager -> HolmesGPT bridge"""
+    import json
+    import os
+    import logging
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import urllib.request
+
+    HOLMES_URL = os.environ.get("HOLMES_URL", "http://holmesgpt-holmes.holmesgpt.svc:80")
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+    logger = logging.getLogger(__name__)
+
+    class WebhookHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            logger.info("%s - %s", self.address_string(), format % args)
+
+        def do_GET(self):
+            if self.path == "/health":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "healthy"}).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self):
+            content_length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(content_length)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'ok')
+
+            try:
+                payload = json.loads(body)
+                for alert in payload.get('alerts', []):
+                    if alert.get('status') != 'firing':
+                        continue
+                    labels = alert.get('labels', {})
+                    annotations = alert.get('annotations', {})
+                    title = labels.get('alertname', 'Unknown Alert')
+                    namespace = labels.get('namespace', '')
+
+                    investigate_payload = {
+                        "source": "prometheus",
+                        "title": title,
+                        "description": annotations.get('description', ''),
+                        "subject": {"namespace": namespace} if namespace else {},
+                        "context": {"labels": labels}
+                    }
+
+                    logger.info(f"Investigating alert: {title}")
+                    try:
+                        req = urllib.request.Request(
+                            f"{HOLMES_URL}/api/investigate",
+                            data=json.dumps(investigate_payload).encode(),
+                            headers={"Content-Type": "application/json"},
+                            method="POST"
+                        )
+                        with urllib.request.urlopen(req, timeout=300) as resp:
+                            result = json.loads(resp.read())
+                            logger.info(f"Alert '{title}' investigated: {len(result.get('tool_calls', []))} tool calls")
+                    except Exception as e:
+                        logger.error(f"Failed to investigate: {e}")
+            except Exception as e:
+                logger.error(f"Failed to process webhook: {e}")
+
+    if __name__ == "__main__":
+        server = HTTPServer(("0.0.0.0", 9095), WebhookHandler)
+        logger.info(f"Bridge listening on :9095, HolmesGPT: {HOLMES_URL}")
+        server.serve_forever()
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: holmes-alertmanager-bridge
+  namespace: holmesgpt
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: holmes-alertmanager-bridge
+  template:
+    metadata:
+      labels:
+        app: holmes-alertmanager-bridge
+    spec:
+      containers:
+        - name: bridge
+          image: python:3.11-slim
+          command: [python3, /app/bridge.py]
+          ports:
+            - containerPort: 9095
+          volumeMounts:
+            - name: bridge-script
+              mountPath: /app
+          env:
+            - name: HOLMES_URL
+              value: "http://holmesgpt-holmes.holmesgpt.svc:80"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9095
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: bridge-script
+          configMap:
+            name: holmes-alertmanager-bridge
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: holmes-alertmanager-bridge
+  namespace: holmesgpt
+spec:
+  selector:
+    app: holmes-alertmanager-bridge
+  ports:
+    - port: 9095
+      targetPort: 9095
