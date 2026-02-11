@@ -319,22 +319,69 @@ kubectl logs -n llm-proxy deploy/llm-proxy -c tailscale-sidecar --tail=20
 ```
 
 ### HolmesGPT — AI-анализ
+
+> **Важно:** HolmesGPT API возвращает raw JSON. Без форматирования вывод нечитаем.
+> Используйте `python3` или `jq` для обработки — примеры ниже.
+
 ```bash
 # Проверить какая модель настроена
 kubectl run test-model --rm -it --restart=Never --image=curlimages/curl -- \
   curl -s --max-time 10 http://holmesgpt-holmes.holmesgpt.svc:80/api/model
 
-# Отправить тестовый чат-запрос
-kubectl run test-chat --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -s --max-time 120 -X POST http://holmesgpt-holmes.holmesgpt.svc:80/api/chat \
+# --- Тестовый чат-запрос (читаемый вывод) ---
+# Через port-forward + python3:
+kubectl port-forward -n holmesgpt svc/holmesgpt-holmes 8088:80 &
+curl -s --max-time 300 -X POST http://localhost:8088/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"ask": "What namespaces exist in this cluster?"}'
+  -d '{"ask": "What namespaces exist in this cluster?"}' \
+  | python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('analysis','no analysis'))"
 
-# Расследование конкретного инцидента
-kubectl run test-inv --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -s --max-time 120 -X POST http://holmesgpt-holmes.holmesgpt.svc:80/api/investigate \
+# Или через jq (если установлен):
+curl -s --max-time 300 -X POST http://localhost:8088/api/chat \
   -H 'Content-Type: application/json' \
-  -d '{"source":"manual","title":"Test","description":"Check pod health in default namespace","subject":{},"context":{}}'
+  -d '{"ask": "What namespaces exist in this cluster?"}' \
+  | jq -r '.analysis'
+
+# --- Расследование инцидента (читаемый вывод) ---
+# Только analysis (текстовый отчёт):
+curl -s --max-time 300 -X POST http://localhost:8088/api/investigate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"manual","title":"Test","description":"Check pod health in default namespace","subject":{},"context":{}}' \
+  | python3 -c "import json,sys; data=json.load(sys.stdin); print(data.get('analysis','no analysis'))"
+
+# Analysis + instructions + кол-во tool_calls (полная сводка):
+curl -s --max-time 300 -X POST http://localhost:8088/api/investigate \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"manual","title":"Test","description":"Check pod health","subject":{},"context":{}}' \
+  | python3 -c "
+import json,sys
+data=json.load(sys.stdin)
+print('=== ANALYSIS ===')
+print(data.get('analysis','N/A'))
+print()
+if data.get('instructions'):
+    print('=== MATCHED RUNBOOKS ===')
+    for i,inst in enumerate(data['instructions']):
+        print(f'  [{i}]: {inst[:200]}...')
+    print()
+print(f'Tool calls executed: {len(data.get(\"tool_calls\",[]))}')
+"
+
+# --- Без port-forward (через kubectl run) ---
+# Вариант 1: с python3 (образ python:3-slim)
+kubectl run test-holmes --rm -it --restart=Never --image=python:3-slim -- \
+  bash -c 'pip -q install requests 2>/dev/null && python3 -c "
+import requests, json
+r = requests.post(\"http://holmesgpt-holmes.holmesgpt.svc:80/api/chat\",
+    json={\"ask\": \"What namespaces exist?\"}, timeout=300)
+print(r.json().get(\"analysis\", \"no analysis\"))
+"'
+
+# Вариант 2: с jq (образ с curl+jq)
+kubectl run test-holmes --rm -it --restart=Never --image=badouralix/curl-jq -- \
+  sh -c 'curl -s --max-time 300 -X POST http://holmesgpt-holmes.holmesgpt.svc:80/api/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"ask\": \"What namespaces exist?\"}" | jq -r .analysis'
 
 # Проверить env vars (ключевой: OPENAI_API_BASE)
 kubectl get deployment -n holmesgpt holmesgpt-holmes \
