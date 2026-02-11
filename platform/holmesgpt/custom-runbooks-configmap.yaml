@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: custom-runbooks
+  namespace: holmesgpt
+data:
+  custom-runbooks.yaml: |
+    runbooks:
+      - match:
+          issue_name: ".*tailscale.*|.*llm-proxy.*|.*vpn.*"
+        instructions: >
+          This issue may be related to the Tailscale VPN tunnel between the cluster and the laptop.
+          Check the following:
+          1. Verify TS_USERSPACE is set to false in llm-proxy deployment (true breaks TCP routing).
+          2. Check if tailscale0 interface exists in the tailscale-sidecar container.
+          3. Run tailscale status to check peer connectivity.
+          4. If nginx shows upstream timed out, the tailscale tunnel is broken.
+      - match:
+          issue_name: ".*CrashLoopBackOff.*|.*OOMKilled.*|.*ImagePullBackOff.*"
+        instructions: >
+          Standard Kubernetes pod failure investigation:
+          1. Check pod events and describe output for the failing pod.
+          2. For OOMKilled: check resource limits vs actual usage.
+          3. For CrashLoopBackOff: check container logs for the last restart.
+          4. For ImagePullBackOff: check image name and pull secrets.
+      - match:
+          issue_name: ".*holmesgpt.*|.*litellm.*|.*openai.*|.*lmstudio.*"
+        instructions: >
+          This issue may be related to the LLM connectivity chain.
+          The architecture is: holmesgpt -> llm-proxy (nginx) -> tailscale tunnel -> laptop (LMStudio).
+          Check: 1. OPENAI_API_BASE env var in holmesgpt. 2. llm-proxy connectivity. 3. tailscale0 interface. 4. If 403 unsupported_country error, litellm hits real OpenAI.
