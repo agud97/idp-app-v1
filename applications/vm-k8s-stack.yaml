@@ -84,6 +84,15 @@ spec:
         victoria-metrics-operator:
           enabled: true
 
+  ignoreDifferences:
+    - group: operator.victoriametrics.com
+      kind: VMSingle
+      jsonPointers:
+        - /spec/storage
+    - group: operator.victoriametrics.com
+      kind: VMAlertmanager
+      jsonPointers:
+        - /spec/storage
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
@@ -94,4 +103,4 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - Replace=true
+      - RespectIgnoreDifferences=true
