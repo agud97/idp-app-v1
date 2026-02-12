@@ -57,10 +57,12 @@ spec:
           enabled: true
           spec:
             storage:
-              storageClassName: openebs-hostpath
-              resources:
-                requests:
-                  storage: 5Gi
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: openebs-hostpath
+                  resources:
+                    requests:
+                      storage: 5Gi
 
         # Grafana
         grafana:
