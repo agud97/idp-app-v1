@@ -17,11 +17,11 @@ spec:
         # LLM конфигурация
         additionalEnvVars:
           - name: MODEL
-            value: "openai/qwen"
+            value: "openai/qwen3-coder-30b-a3b-instruct-mlx"
           - name: OPENAI_API_BASE
-            value: "http://89.104.65.97:30507/openai/v1"
+            value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
-            value: "sk-eeghuh2cein1ziech8jaiM0ohcaim8qu"
+            value: "not-needed"
 
         # Toolsets
         toolsets:
