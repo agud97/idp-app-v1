@@ -14,10 +14,10 @@ spec:
         ollama:
           enabled: false
         openaiBaseApiUrls:
-          - http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1
+          - http://89.104.65.97:30507/openai/v1
         extraEnvVars:
           - name: OPENAI_API_KEY
-            value: "not-needed"
+            value: "sk-eeghuh2cein1ziech8jaiM0ohcaim8qu"
           - name: VECTOR_DB
             value: "qdrant"
           - name: QDRANT_URI
