@@ -120,7 +120,7 @@ remoteWrite:
 
 | Параметр | Значение |
 |----------|---------|
-| Модель | `openai/qwen2.5-32b` |
+| Модель | `openai/qwen3-coder-30b-a3b-instruct-mlx` |
 | LLM endpoint | `http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1` |
 | Service | `holmesgpt-holmes.holmesgpt.svc:80` |
 
@@ -232,7 +232,7 @@ spec:
                             ┌──────────────────┐
                             │  Ноутбук/Сервер  │
                             │  LMStudio :1234  │
-                            │  qwen2.5-32b     │
+                            │  qwen3-coder-30b-a3b-instruct-mlx     │
                             └──────────────────┘
 ```
 
