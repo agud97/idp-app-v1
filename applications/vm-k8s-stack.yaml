@@ -78,7 +78,7 @@ spec:
             dashboards:
               enabled: true
           plugins:
-            - victoriametrics-datasource
+            - victoriametrics-metrics-datasource
 
         defaultRules:
           create: true
