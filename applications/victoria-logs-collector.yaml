@@ -12,11 +12,11 @@ spec:
   source:
     repoURL: https://victoriametrics.github.io/helm-charts
     chart: victoria-logs-collector
-    targetRevision: "0.16.0"
+    targetRevision: "0.2.9"
     helm:
       values: |
         remoteWrite:
-          - url: "http://vls-victoria-logs-single-server.victorialogs.svc:9428"
+          - url: "http://victoria-logs-victoria-logs-single-server.victorialogs.svc:9428"
 
   destination:
     server: https://kubernetes.default.svc

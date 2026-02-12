@@ -77,7 +77,6 @@ spec:
               enabled: true
           plugins:
             - victoriametrics-datasource
-            - victoriametrics-logs-datasource
 
         defaultRules:
           create: true

@@ -1,5 +1,5 @@
 # HolmesGPT - ArgoCD Application
-# Обновлено: версия 0.19.0 + toolsets для VictoriaMetrics/VictoriaLogs
+# Версия 0.19.0 + prometheus/metrics toolset для VictoriaMetrics
 
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -14,10 +14,6 @@ spec:
     targetRevision: "0.19.0"
     helm:
       values: |
-        image:
-          repository: robustadev/holmes
-          tag: "0.19.0"
-
         # LLM конфигурация
         additionalEnvVars:
           - name: MODEL
@@ -26,14 +22,6 @@ spec:
             value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
             value: "not-needed"
-          - name: ALLOWED_TOOLSETS
-            value: "kubernetes/core,kubernetes/logs,prometheus/metrics,victorialogs/logs,knowledge/base"
-          - name: INTERACTIVE_MODE
-            value: "true"
-          - name: REQUIRE_CONFIRMATION
-            value: "true"
-          - name: AUTO_SEARCH_KNOWLEDGE
-            value: "true"
 
         # Toolsets
         toolsets:
@@ -44,39 +32,29 @@ spec:
           prometheus/metrics:
             enabled: true
             config:
-              prometheus_url: "http://vm-k8s-stack-victoria-metrics-k8s-stack-vmsingle.monitoring.svc:8429"
+              prometheus_url: "http://vmsingle-vm-k8s-stack-victoria-metrics-k8s-stack.monitoring.svc:8429"
+          runbook:
+            enabled: true
+          bash:
+            enabled: true
+            config:
+              include_default_allow_deny_list: true
 
-        # Service Account
-        createServiceAccount: true
-        serviceAccount:
-          create: true
-          name: holmesgpt
-
-        # RBAC
-        rbac:
-          create: true
-          rules:
-            - apiGroups: [""]
-              resources: ["pods", "pods/log", "pods/exec", "events", "namespaces", "nodes", "services", "configmaps", "secrets"]
-              verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-            - apiGroups: ["apps"]
-              resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
-              verbs: ["get", "list", "watch", "update", "patch"]
-            - apiGroups: ["batch"]
-              resources: ["jobs", "cronjobs"]
-              verbs: ["get", "list", "watch", "create", "delete"]
-            - apiGroups: ["networking.k8s.io"]
-              resources: ["ingresses", "networkpolicies"]
-              verbs: ["get", "list", "watch"]
-            - apiGroups: ["metrics.k8s.io"]
-              resources: ["pods", "nodes"]
-              verbs: ["get", "list"]
-
-        # Service
-        service:
-          type: ClusterIP
-          port: 80
-          targetPort: 5050
+        # Custom runbooks via additionalVolumes (supported in 0.19.0)
+        additionalVolumes:
+          - name: custom-runbooks
+            configMap:
+              name: custom-runbooks
+          - name: sre-runbooks
+            configMap:
+              name: sre-runbooks
+        additionalVolumeMounts:
+          - name: custom-runbooks
+            mountPath: /app/holmes/plugins/runbooks/custom-runbooks.yaml
+            subPath: custom-runbooks.yaml
+          - name: sre-runbooks
+            mountPath: /app/holmes/plugins/runbooks/sre-runbooks.yaml
+            subPath: sre-runbooks.yaml
 
         # Resources
         resources:
