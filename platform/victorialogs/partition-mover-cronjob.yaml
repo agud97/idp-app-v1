@@ -1,0 +1,132 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vlogs-partition-mover
+  namespace: victorialogs
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 86400
+      template:
+        spec:
+          serviceAccountName: vlogs-partition-mover
+          restartPolicy: Never
+          containers:
+            - name: mover
+              image: bitnami/kubectl:latest
+              command: ["/bin/bash", "-c"]
+              args:
+                - |
+                  set -euo pipefail
+                  VLOGS_POD="victoria-logs-victoria-logs-single-server-0"
+                  NS="victorialogs"
+                  TODAY=$(date +%Y%m%d)
+
+                  echo "=== VictoriaLogs Partition Mover ==="
+                  echo "Today: $TODAY"
+
+                  # Get partition list
+                  PARTITIONS=$(kubectl exec -n "$NS" "$VLOGS_POD" -- wget -qO- http://127.0.0.1:9428/internal/partition/list 2>/dev/null)
+                  echo "Current partitions: $PARTITIONS"
+
+                  # Parse JSON array (simple: remove brackets and quotes, split by comma)
+                  PART_LIST=$(echo "$PARTITIONS" | tr -d '[]"' | tr ',' '\n')
+
+                  MOVED=0
+                  SKIPPED=0
+                  ERRORS=0
+
+                  for PART in $PART_LIST; do
+                    # Skip today's partition
+                    if [ "$PART" = "$TODAY" ]; then
+                      echo "SKIP $PART (today)"
+                      SKIPPED=$((SKIPPED + 1))
+                      continue
+                    fi
+
+                    # Check if already a symlink (already on cold)
+                    IS_LINK=$(kubectl exec -n "$NS" "$VLOGS_POD" -- sh -c "test -L /storage/partitions/$PART && echo yes || echo no" 2>/dev/null)
+                    if [ "$IS_LINK" = "yes" ]; then
+                      echo "SKIP $PART (already on cold storage)"
+                      SKIPPED=$((SKIPPED + 1))
+                      continue
+                    fi
+
+                    echo "MOVING $PART to cold storage..."
+
+                    # Detach partition
+                    if ! kubectl exec -n "$NS" "$VLOGS_POD" -- wget -qO- --post-data='' "http://127.0.0.1:9428/internal/partition/detach?name=$PART" 2>/dev/null; then
+                      echo "ERROR: Failed to detach $PART"
+                      ERRORS=$((ERRORS + 1))
+                      continue
+                    fi
+                    echo "  Detached $PART"
+
+                    # Move to cold and create symlink
+                    if ! kubectl exec -n "$NS" "$VLOGS_POD" -- sh -c "mv /storage/partitions/$PART /vlogs-cold/$PART && ln -s /vlogs-cold/$PART /storage/partitions/$PART" 2>/dev/null; then
+                      echo "ERROR: Failed to move $PART, attempting re-attach..."
+                      kubectl exec -n "$NS" "$VLOGS_POD" -- wget -qO- --post-data='' "http://127.0.0.1:9428/internal/partition/attach?name=$PART" 2>/dev/null || true
+                      ERRORS=$((ERRORS + 1))
+                      continue
+                    fi
+                    echo "  Moved to /vlogs-cold/$PART, symlink created"
+
+                    # Re-attach partition
+                    if ! kubectl exec -n "$NS" "$VLOGS_POD" -- wget -qO- --post-data='' "http://127.0.0.1:9428/internal/partition/attach?name=$PART" 2>/dev/null; then
+                      echo "ERROR: Failed to re-attach $PART after move"
+                      ERRORS=$((ERRORS + 1))
+                      continue
+                    fi
+                    echo "  Re-attached $PART"
+                    MOVED=$((MOVED + 1))
+                  done
+
+                  echo ""
+                  echo "=== Summary ==="
+                  echo "Moved: $MOVED | Skipped: $SKIPPED | Errors: $ERRORS"
+
+                  # Final partition list
+                  FINAL=$(kubectl exec -n "$NS" "$VLOGS_POD" -- wget -qO- http://127.0.0.1:9428/internal/partition/list 2>/dev/null)
+                  echo "Final partitions: $FINAL"
+
+                  if [ "$ERRORS" -gt 0 ]; then
+                    exit 1
+                  fi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vlogs-partition-mover
+  namespace: victorialogs
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vlogs-partition-mover
+  namespace: victorialogs
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vlogs-partition-mover
+  namespace: victorialogs
+subjects:
+  - kind: ServiceAccount
+    name: vlogs-partition-mover
+    namespace: victorialogs
+roleRef:
+  kind: Role
+  name: vlogs-partition-mover
+  apiGroup: rbac.authorization.k8s.io
