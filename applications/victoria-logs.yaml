@@ -27,6 +27,13 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+          extraVolumes:
+            - name: cold-storage
+              persistentVolumeClaim:
+                claimName: vlogs-cold-storage
+          extraVolumeMounts:
+            - name: cold-storage
+              mountPath: /vlogs-cold
 
   destination:
     server: https://kubernetes.default.svc
