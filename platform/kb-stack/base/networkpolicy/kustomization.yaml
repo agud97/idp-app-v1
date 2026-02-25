@@ -4,3 +4,4 @@ resources:
   - default-deny.yaml
   - allow-egress.yaml
   - allow-egress-normalizer.yaml
+  - allow-ingress-internal.yaml
