@@ -12,5 +12,15 @@ helmCharts:
           type: ClusterIP
       backend:
         readOnly: true
+        livenessProbe:
+          initialDelaySeconds: 30
+          timeoutSeconds: 2
+          periodSeconds: 10
+          failureThreshold: 6
+        readinessProbe:
+          initialDelaySeconds: 10
+          timeoutSeconds: 2
+          periodSeconds: 10
+          failureThreshold: 6
 resources:
   - kubevious-exporter-cronjob.yaml
