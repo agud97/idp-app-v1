@@ -14,7 +14,7 @@ spec:
         spec:
           serviceAccountName: kubescape-exporter
           restartPolicy: OnFailure
-          containers:
+          initContainers:
             - name: scanner
               image: quay.io/kubescape/kubescape-cli:v3.0.48
               envFrom:
@@ -31,6 +31,7 @@ spec:
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
+          containers:
             - name: uploader
               image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
               envFrom:
@@ -52,13 +53,6 @@ spec:
                 - -c
                 - |
                   set -euo pipefail
-                  for i in $(seq 1 30); do
-                    [ -s /tmp/kubescape-findings.json ] && break
-                    sleep 2
-                  done
-                  if [ ! -f /tmp/kubescape-findings.json ]; then
-                    echo '{}' > /tmp/kubescape-findings.json
-                  fi
                   ts=$(date -u +"%Y%m%dT%H%M%SZ")
                   mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
                   mc mb -p "local/kb-artifacts" || true

@@ -35,7 +35,6 @@ spec:
               volumeMounts:
                 - name: shared
                   mountPath: /shared
-          containers:
             - name: fetcher
               image: curlimages/curl:8.5.0
               envFrom:
@@ -91,6 +90,7 @@ spec:
                   mountPath: /shared
                 - name: tmp
                   mountPath: /tmp
+          containers:
             - name: uploader
               image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
               envFrom:
@@ -112,14 +112,6 @@ spec:
                 - -c
                 - |
                   set -euo pipefail
-                  for i in $(seq 1 60); do
-                    [ -s /tmp/topology.json ] && break
-                    sleep 5
-                  done
-                  if [ ! -s /tmp/topology.json ]; then
-                    echo "ERROR: topology.json not ready after 5min"
-                    exit 1
-                  fi
                   ts=$(date -u +"%Y%m%dT%H%M%SZ")
                   mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
                   mc mb -p "local/kb-artifacts" || true
