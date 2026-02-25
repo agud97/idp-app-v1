@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: holmesgpt-configs
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/agud97/idp-app-v1.git
+    targetRevision: HEAD
+    path: platform/holmesgpt
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: holmesgpt
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
