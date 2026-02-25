@@ -53,3 +53,9 @@ patches:
       - op: add
         path: /spec/template/spec/containers/0/readinessProbe/failureThreshold
         value: 6
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "4000"
+      - op: replace
+        path: /spec/template/spec/containers/0/ports/0/containerPort
+        value: 4000
