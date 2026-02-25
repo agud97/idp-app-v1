@@ -39,7 +39,7 @@ data:
               - cluster_id: Cluster ID (default: mvp-cloud)
             command: >
               python3 /kb-scripts/kb_tools.py list
-              {{ doc_type | default("") | quote }}
+              {{ doc_type | default("") }}
               {{ limit | default(20) }}
               {{ cluster_id | default("mvp-cloud") }}
 
