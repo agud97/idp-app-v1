@@ -9,6 +9,8 @@ spec:
     repoURL: https://github.com/agud97/idp-app-v1.git
     targetRevision: HEAD
     path: platform/kb-stack/overlays/mvp-cloud
+    kustomize:
+      buildOptions: --enable-helm
   destination:
     server: https://kubernetes.default.svc
     namespace: kb-system
