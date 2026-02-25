@@ -22,8 +22,7 @@ spec:
                 - -c
                 - |
                   set -euo pipefail
-                  popeye -o json --save /tmp || true
-                  mv /tmp/popeye.json /tmp/report.json || true
+                  popeye -o json > /tmp/report.json || true
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp

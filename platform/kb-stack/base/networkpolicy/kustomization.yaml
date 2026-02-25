@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - default-deny.yaml
   - allow-egress.yaml
+  - allow-egress-normalizer.yaml

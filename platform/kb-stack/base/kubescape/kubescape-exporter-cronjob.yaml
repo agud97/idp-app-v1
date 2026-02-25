@@ -21,12 +21,15 @@ spec:
                 - configMapRef:
                     name: kb-stack-config
               command:
-                - /bin/sh
-                - -c
-                - |
-                  set -euo pipefail
-                  out="/tmp/kubescape-findings.json"
-                  kubescape scan framework nsa --format json --output "$out" || true
+                - kubescape
+              args:
+                - scan
+                - framework
+                - nsa
+                - --format
+                - json
+                - --output
+                - /tmp/kubescape-findings.json
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
