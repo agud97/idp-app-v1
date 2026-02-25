@@ -20,8 +20,6 @@ spec:
               envFrom:
                 - configMapRef:
                     name: kb-stack-config
-              command:
-                - kubescape
               args:
                 - scan
                 - framework
