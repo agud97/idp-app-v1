@@ -4,12 +4,9 @@ metadata:
   name: minio-create-bucket
   namespace: kb-system
   annotations:
-    argocd.argoproj.io/sync-options: Replace=true
+    argocd.argoproj.io/sync-options: Replace=true,Force=true
 spec:
   backoffLimit: 3
-  selector:
-    matchLabels:
-      app: minio-create-bucket
   template:
     metadata:
       labels:
