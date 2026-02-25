@@ -3,13 +3,13 @@ kind: Kustomization
 helmCharts:
   - name: kubescape-operator
     repo: https://kubescape.github.io/helm-charts/
-    version: 1.17.0
+    version: 1.29.12
     releaseName: kubescape
     namespace: kb-system
     valuesInline:
       clusterName: $(CLUSTER_ID)
-      capabilityDiscovery:
-        enable: true
+      capabilities:
+        continuousScan: enable
       operator:
         # Disable secret access by default
         rbac:

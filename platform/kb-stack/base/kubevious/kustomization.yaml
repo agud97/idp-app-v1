@@ -3,7 +3,7 @@ kind: Kustomization
 helmCharts:
   - name: kubevious
     repo: https://helm.kubevious.io
-    version: 1.0.79
+    version: 1.2.2
     releaseName: kubevious
     namespace: kb-system
     valuesInline:
