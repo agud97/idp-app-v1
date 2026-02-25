@@ -11,9 +11,6 @@ helmCharts:
       capabilityDiscovery:
         enable: true
       operator:
-        env:
-          - name: KS_UPLOAD_URL
-            value: ""
         # Disable secret access by default
         rbac:
           create: true
