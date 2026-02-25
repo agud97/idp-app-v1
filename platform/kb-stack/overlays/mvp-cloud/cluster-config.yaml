@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-stack-config
+  namespace: kb-system
+data:
+  CLUSTER_ID: mvp-cloud
+  MINIO_ENDPOINT: http://minio.kb-system.svc:9000
+  QDRANT_ENDPOINT: http://qdrant.qdrant.svc.cluster.local:6333
+  HOLMES_ENDPOINT: http://holmesgpt-holmes.holmesgpt.svc
+  KUBEVIOUS_ENDPOINT: http://kubevious-backend.kb-system.svc:4000
+  KUBEVIOUS_SNAPSHOT_PATH: /api/snapshot
+  SCHEDULE: "*/30 * * * *"

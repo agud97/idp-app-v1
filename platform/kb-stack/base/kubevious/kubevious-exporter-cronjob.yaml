@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: kubevious-exporter
+  namespace: kb-system
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: kubevious-exporter
+        spec:
+          serviceAccountName: kubevious-exporter
+          restartPolicy: OnFailure
+          containers:
+            - name: fetcher
+              image: curlimages/curl:8.5.0
+              envFrom:
+                - configMapRef:
+                    name: kb-stack-config
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  curl -sS "$KUBEVIOUS_ENDPOINT$KUBEVIOUS_SNAPSHOT_PATH" -o /tmp/topology.json
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+            - name: uploader
+              image: minio/mc:RELEASE.2024-12-18T00-45-54Z
+              envFrom:
+                - configMapRef:
+                    name: kb-stack-config
+              env:
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: accessKey
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: secretKey
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  ts=$(date -u +"%Y%m%dT%H%M%SZ")
+                  mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+                  mc mb -p "local/kb-artifacts" || true
+                  mc cp "/tmp/topology.json" "local/kb-artifacts/raw/kubevious/${CLUSTER_ID}/${ts}/topology.json"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}

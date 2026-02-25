@@ -1,0 +1,47 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: normalizer
+  namespace: kb-system
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: normalizer
+        spec:
+          serviceAccountName: normalizer
+          restartPolicy: OnFailure
+          containers:
+            - name: normalizer
+              image: python:3.11-slim
+              envFrom:
+                - configMapRef:
+                    name: kb-stack-config
+              env:
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: accessKey
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: secretKey
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  pip install --no-cache-dir boto3 requests
+                  python /scripts/normalize.py
+              volumeMounts:
+                - name: script
+                  mountPath: /scripts
+          volumes:
+            - name: script
+              configMap:
+                name: normalizer-script

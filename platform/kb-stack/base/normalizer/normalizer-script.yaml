@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: normalizer-script
+  namespace: kb-system
+data:
+  normalize.py: |
+    import json
+    import os
+    import uuid
+    from datetime import datetime
+
+    import boto3
+    import requests
+
+    REDACT_KEYS = ["token", "password", "secret", "key", "authorization", "cookie"]
+
+    def redact(obj):
+      if isinstance(obj, dict):
+        redacted = {}
+        for k, v in obj.items():
+          if any(rk in k.lower() for rk in REDACT_KEYS):
+            redacted[k] = "REDACTED"
+          else:
+            redacted[k] = redact(v)
+        return redacted
+      if isinstance(obj, list):
+        return [redact(x) for x in obj]
+      return obj
+
+    def qdrant_upsert(endpoint, collection, docs):
+      url = f"{endpoint}/collections/{collection}"
+      r = requests.get(url, timeout=10)
+      if r.status_code == 404:
+        requests.put(
+          url,
+          json={"vectors": {"size": 1, "distance": "Cosine"}},
+          timeout=10,
+        ).raise_for_status()
+      points = []
+      for d in docs:
+        points.append({
+          "id": d["id"],
+          "vector": [0.0],
+          "payload": d,
+        })
+      if points:
+        requests.put(
+          f"{endpoint}/collections/{collection}/points?wait=true",
+          json={"points": points},
+          timeout=20,
+        ).raise_for_status()
+
+    def main():
+      cluster_id = os.environ["CLUSTER_ID"]
+      minio_endpoint = os.environ["MINIO_ENDPOINT"]
+      qdrant_endpoint = os.environ["QDRANT_ENDPOINT"]
+      access_key = os.environ["MINIO_ACCESS_KEY"]
+      secret_key = os.environ["MINIO_SECRET_KEY"]
+
+      s3 = boto3.client(
+        "s3",
+        endpoint_url=minio_endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name="us-east-1",
+      )
+
+      ts = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+      docs_path = f"normalized/docs/{cluster_id}/{ts}/docs.jsonl"
+      nodes_path = f"normalized/graph/{cluster_id}/{ts}/nodes.jsonl"
+      edges_path = f"normalized/graph/{cluster_id}/{ts}/edges.jsonl"
+      bundle_path = f"bundles/{cluster_id}/{ts}/bundle.json"
+
+      docs = []
+
+      paginator = s3.get_paginator("list_objects_v2")
+      for page in paginator.paginate(Bucket="kb-artifacts", Prefix=f"raw/"):
+        for obj in page.get("Contents", []):
+          key = obj["Key"]
+          if f"/{cluster_id}/" not in key:
+            continue
+          body = s3.get_object(Bucket="kb-artifacts", Key=key)["Body"].read()
+          try:
+            data = json.loads(body)
+          except Exception:
+            data = {"raw": body.decode("utf-8", errors="ignore")}
+          data = redact(data)
+
+          if key.startswith("raw/kubescape/"):
+            doc_type = "finding_kubescape"
+          elif key.startswith("raw/popeye/"):
+            doc_type = "finding_popeye"
+          elif key.startswith("raw/kubevious/"):
+            doc_type = "topology"
+          else:
+            doc_type = "object_card"
+
+          docs.append({
+            "id": str(uuid.uuid4()),
+            "cluster_id": cluster_id,
+            "timestamp": ts,
+            "doc_type": doc_type,
+            "text": json.dumps(data),
+            "source_path": key,
+          })
+
+      docs_jsonl = "\n".join(json.dumps(d) for d in docs) + ("\n" if docs else "")
+      nodes_jsonl = ""
+      edges_jsonl = ""
+
+      s3.put_object(Bucket="kb-artifacts", Key=docs_path, Body=docs_jsonl.encode("utf-8"))
+      s3.put_object(Bucket="kb-artifacts", Key=nodes_path, Body=nodes_jsonl.encode("utf-8"))
+      s3.put_object(Bucket="kb-artifacts", Key=edges_path, Body=edges_jsonl.encode("utf-8"))
+
+      bundle = {
+        "cluster_id": cluster_id,
+        "timestamp": ts,
+        "docs": docs_path,
+        "nodes": nodes_path,
+        "edges": edges_path,
+      }
+      s3.put_object(Bucket="kb-artifacts", Key=bundle_path, Body=json.dumps(bundle).encode("utf-8"))
+
+      qdrant_upsert(qdrant_endpoint, f"kb_docs_{cluster_id}", docs)
+
+    if __name__ == "__main__":
+      main()

@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+helmCharts:
+  - name: kubescape-operator
+    repo: https://kubescape.github.io/helm-charts/
+    version: 1.17.0
+    releaseName: kubescape
+    namespace: kb-system
+    valuesInline:
+      clusterName: $(CLUSTER_ID)
+      capabilityDiscovery:
+        enable: true
+      operator:
+        env:
+          - name: KS_UPLOAD_URL
+            value: ""
+        # Disable secret access by default
+        rbac:
+          create: true
+          pspEnabled: false
+resources:
+  - kubescape-exporter-cronjob.yaml
