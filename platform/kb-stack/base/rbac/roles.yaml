@@ -67,3 +67,29 @@ roleRef:
   kind: ClusterRole
   name: kb-readonly
   apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kb-readonly-kubevious-backend
+subjects:
+  - kind: ServiceAccount
+    name: kubevious-backend
+    namespace: kb-system
+roleRef:
+  kind: ClusterRole
+  name: kb-readonly
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kb-readonly-kubevious-parser
+subjects:
+  - kind: ServiceAccount
+    name: kubevious-parser
+    namespace: kb-system
+roleRef:
+  kind: ClusterRole
+  name: kb-readonly
+  apiGroup: rbac.authorization.k8s.io

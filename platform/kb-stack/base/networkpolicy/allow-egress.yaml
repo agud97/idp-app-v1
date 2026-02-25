@@ -39,10 +39,10 @@ spec:
           port: 4000
     - to:
         - ipBlock:
-            cidr: 10.96.0.1/32
+            cidr: 194.58.110.52/32
       ports:
         - protocol: TCP
-          port: 443
+          port: 6443
     - to:
         - namespaceSelector:
             matchLabels:
