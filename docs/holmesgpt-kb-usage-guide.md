@@ -40,20 +40,25 @@
 Основной способ работы с HolmesGPT — отправить вопрос через HTTP.
 HolmesGPT сам решит, какие инструменты вызвать, и вернёт итоговый ответ.
 
-### Запрос из kubectl (curl из пода)
+### Запрос из kubectl (из пода HolmesGPT)
+
+> **Порт**: HolmesGPT слушает на `localhost:5050` внутри пода (env `HOLMES_PORT=5050`).
+> Service экспонирует его как 80→5050. Из пода всегда используй `localhost:5050`.
+>
+> **Таймаут**: LLM (Qwen3-30B через LMStudio) обрабатывает каждый шаг за 5–30 сек,
+> а запрос с несколькими tool calls может занять 3–8 минут. Используй `timeout=600`.
 
 ```bash
 export K="kubectl --kubeconfig ~/proj/cross/kubeconfig_6005021"
 
 # Получить имя пода HolmesGPT
-HOLMES_POD=$($K get pod -n holmesgpt -l app.kubernetes.io/name=holmes \
-  -o jsonpath='{.items[0].metadata.name}')
+HOLMES_POD=$($K get pods -n holmesgpt --no-headers | grep "holmesgpt-holmes.*Running" | awk '{print $1}')
 
 # Задать вопрос через API
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 
-API = 'http://localhost:80'
+API = 'http://localhost:5050'
 question = 'Какие security controls провалил Kubescape? Покажи топ-5 по количеству failed ресурсов.'
 
 req = urllib.request.Request(
@@ -62,7 +67,7 @@ req = urllib.request.Request(
     headers={'Content-Type': 'application/json'},
     method='POST'
 )
-with urllib.request.urlopen(req, timeout=120) as r:
+with urllib.request.urlopen(req, timeout=600) as r:
     resp = json.loads(r.read())
     print(resp['analysis'])
 "
@@ -121,14 +126,14 @@ HOLMES_POD=$($K get pod -n holmesgpt -l app.kubernetes.io/name=holmes \
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Проанализируй результаты Kubescape security scan. Какие controls провалились? '
                'Сколько ресурсов затронуто? Расставь по приоритету.'
     }).encode(),
     headers={'Content-Type': 'application/json'}, method='POST'
 )
-with urllib.request.urlopen(req, timeout=120) as r:
+with urllib.request.urlopen(req, timeout=600) as r:
     print(json.loads(r.read())['analysis'])
 "
 ```
@@ -139,14 +144,14 @@ with urllib.request.urlopen(req, timeout=120) as r:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'В кластере не выставлены resource limits на контейнеры. '
                'Найди в kubescape какие именно namespaces и поды затронуты.'
     }).encode(),
     headers={'Content-Type': 'application/json'}, method='POST'
 )
-with urllib.request.urlopen(req, timeout=120) as r:
+with urllib.request.urlopen(req, timeout=600) as r:
     print(json.loads(r.read())['analysis'])
 "
 ```
@@ -171,17 +176,16 @@ $K exec -n holmesgpt $HOLMES_POD -- \
 $K exec -n holmesgpt $HOLMES_POD -- \
   python3 /kb-scripts/kb_tools.py list finding_kubescape 1 mvp-cloud
 
-# 2. Скачать полный JSON из MinIO (путь берётся из поля source:)
+# 2. Скачать полный JSON из MinIO (boto3, AWS4 — curl -u НЕ работает с MinIO S3)
 $K exec -n holmesgpt $HOLMES_POD -- \
-  curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/kubescape/mvp-cloud/<ts>/findings.json" \
-  | python3 -m json.tool | head -100
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/kubescape/mvp-cloud/<ts>/findings.json" | head -100
 
 # Или попросить HolmesGPT получить файл через kb_fetch_artifact:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Используй kb_list_findings для поиска kubescape отчёта, '
                'затем kb_fetch_artifact чтобы получить полный JSON '
@@ -250,7 +254,7 @@ python3 /kb-scripts/kb_tools.py search "immutable filesystem read only"         
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Получи последний Popeye lint отчёт из базы знаний. '
                'Какие ресурсы имеют ошибки? Что нужно починить в первую очередь?'
@@ -268,7 +272,7 @@ with urllib.request.urlopen(req, timeout=180) as r:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Используй kb_list_findings с doc_type=finding_popeye чтобы найти popeye отчёт, '
                'затем kb_fetch_artifact чтобы получить полный JSON. '
@@ -288,11 +292,10 @@ with urllib.request.urlopen(req, timeout=180) as r:
 $K exec -n holmesgpt $HOLMES_POD -- \
   python3 /kb-scripts/kb_tools.py list finding_popeye 5 mvp-cloud
 
-# Получить сырой отчёт и разобрать
+# Получить сырой отчёт и разобрать (boto3, AWS4 — curl -u НЕ работает с MinIO S3)
 $K exec -n holmesgpt $HOLMES_POD -- \
-  curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/popeye/mvp-cloud/<ts>/report.json" \
-  | python3 -c "
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/popeye/mvp-cloud/<ts>/report.json" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 sanitizers = d.get('popeye', {}).get('sanitizers', [])
@@ -345,10 +348,10 @@ embed_text:
 python3 /kb-scripts/kb_tools.py search "popeye errors warnings resources"  5 mvp-cloud
 python3 /kb-scripts/kb_tools.py search "lint issues kubernetes resources"   5 mvp-cloud
 
-# После получения path — полный анализ
-curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/popeye/mvp-cloud/<ts>/report.json" \
-  | python3 -c "
+# После получения path — полный анализ (boto3, AWS4 — curl -u НЕ работает)
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/popeye/mvp-cloud/<ts>/report.json" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 print(json.dumps(d['popeye']['sanitizers'], indent=2))
@@ -370,7 +373,7 @@ print(json.dumps(d['popeye']['sanitizers'], indent=2))
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Используй kb-stack инструменты чтобы получить topology данные. '
                'Какие namespaces существуют в кластере? '
@@ -389,7 +392,7 @@ with urllib.request.urlopen(req, timeout=180) as r:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Найди в topology данных всё что связано с namespace holmesgpt. '
                'Какие deployments там есть? Какие у них свойства (props)?'
@@ -410,9 +413,8 @@ $K exec -n holmesgpt $HOLMES_POD -- \
 
 # Получить полный файл и вывести все namespaces с алертами
 $K exec -n holmesgpt $HOLMES_POD -- \
-  curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/kubevious/mvp-cloud/<ts>/topology.json" \
-  | python3 -c "
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/kubevious/mvp-cloud/<ts>/topology.json" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 nodes = d.get('nodes', [])
@@ -436,9 +438,8 @@ for n in nodes:
 
 ```bash
 $K exec -n holmesgpt $HOLMES_POD -- \
-  curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/kubevious/mvp-cloud/<ts>/topology.json" \
-  | python3 -c "
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/kubevious/mvp-cloud/<ts>/topology.json" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 nodes = d.get('nodes', [])
@@ -487,7 +488,7 @@ DN (Distinguished Name) — путь в дереве:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Сделай полный health check кластера mvp-cloud. '
                'Используй kb_search и kb_list_findings для получения данных из всех источников: '
@@ -507,7 +508,7 @@ with urllib.request.urlopen(req, timeout=240) as r:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'Используя данные из kb-stack: '
                '1) Найди все namespaces через topology '
@@ -583,19 +584,23 @@ $K exec -n holmesgpt $HOLMES_POD -- \
 
 ### kb_fetch_artifact — получить сырой файл из MinIO
 
+> **Важно**: MinIO S3 API (порт 9000) требует AWS Signature V4. `curl -u user:pass`
+> (HTTP Basic Auth) не работает — MinIO вернёт XML ошибку `InvalidRequest`.
+> `kb_fetch_artifact` использует `kb_tools.py fetch` (boto3), который выполняет
+> корректную подпись автоматически.
+
 ```bash
-# Получить path через kb_list
+# 1. Найти path через kb_list
 $K exec -n holmesgpt $HOLMES_POD -- \
   python3 /kb-scripts/kb_tools.py list finding_kubescape 1 mvp-cloud
 # → source: raw/kubescape/mvp-cloud/20260225T190008Z/findings.json
 
-# Скачать файл напрямую через curl (в HolmesGPT поде)
+# 2. Скачать файл через kb_tools.py fetch (boto3, работает корректно)
 $K exec -n holmesgpt $HOLMES_POD -- \
-  curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/raw/kubescape/mvp-cloud/20260225T190008Z/findings.json" \
-  | python3 -m json.tool | head -60
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/kubescape/mvp-cloud/20260225T190008Z/findings.json" | head -60
 
-# Или попросить HolmesGPT:
+# 3. Попросить HolmesGPT вызвать инструмент:
 # "используй kb_fetch_artifact с path=raw/kubescape/mvp-cloud/<ts>/findings.json"
 ```
 
@@ -613,6 +618,39 @@ HolmesGPT использует LLM (Qwen3 через LMStudio) и сам реш�
 | Все источники | "проверь все источники kb-stack", "сделай полный анализ" |
 | Только поиск | "используй kb_search с запросом..." |
 | Только список | "используй kb_list_findings с doc_type=..." |
+
+### Пример реального вызова (верифицировано 2026-02-25)
+
+Запрос: `"Используй kb_search чтобы найти security проблемы в кластере mvp-cloud"`
+
+Лог HolmesGPT (из `kubectl logs`):
+```
+✅ Toolset kb/stack
+Received /api/chat request: model=None
+Running tool #1 kb_search: python3 /kb-scripts/kb_tools.py search "'security problems'" 10 mvp-cloud
+  Finished #1 in 0.12s, output length: 4,866 characters
+Running tool #2 kb_search: python3 /kb-scripts/kb_tools.py search "'kubescape security findings'" 5 mvp-cloud
+  Finished #2 in 0.13s, output length: 2,678 characters
+Running tool #3 kb_list_findings: python3 /kb-scripts/kb_tools.py list finding_kubescape 10 mvp-cloud
+  Finished #3 in 0.08s
+Running tool #4 kb_fetch_artifact: ...
+  Finished #4 in 0.21s
+```
+
+Фрагмент ответа LLM:
+```
+## Security Issues Found in mvp-cloud Cluster
+
+### Critical Security Issues:
+1. **Non-root containers** - 54 failed checks
+2. **Allow privilege escalation** - 45 failed checks
+3. **Immutable container filesystem** - 48 failed checks
+
+### High Severity Issues:
+1. **Ingress and Egress blocked** - 55 failed checks
+2. **Automatic mapping of service account** - 9 failed checks
+3. **Administrative Roles** - 3 failed checks
+```
 
 ### Подсказка к описанию toolset
 
@@ -639,7 +677,7 @@ HOLMES_POD=$($K get pod -n holmesgpt -l app.kubernetes.io/name=holmes \
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json, datetime
 
-API = 'http://localhost:80'
+API = 'http://localhost:5050'
 questions = [
     ('Kubescape Security',
      'Используй kb_list_findings с doc_type=finding_kubescape и kb_fetch_artifact '
@@ -684,26 +722,37 @@ echo "Результат сохранён в /tmp/kb-health-$(date +%Y%m%d).txt"
 
 ## Отладка и диагностика
 
-### Проверить что toolset загружен
+### Проверить что toolset загружен и активен
 
 ```bash
-HOLMES_POD=$($K get pod -n holmesgpt -l app.kubernetes.io/name=holmes \
-  -o jsonpath='{.items[0].metadata.name}')
+HOLMES_POD=$($K get pods -n holmesgpt --no-headers | grep "holmesgpt-holmes.*Running" | awk '{print $1}')
 
-# Файл присутствует в поде
+# 1. Файлы смонтированы
 $K exec -n holmesgpt $HOLMES_POD -- ls -la \
   /app/holmes/plugins/toolsets/kb-stack-toolset.yaml \
   /kb-scripts/kb_tools.py
 
-# Toolset валиден (python3 + yaml доступны)
+# 2. Toolset имеет статус ENABLED (не DISABLED!)
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
-import yaml
-d = yaml.safe_load(open('/app/holmes/plugins/toolsets/kb-stack-toolset.yaml'))
-for name, cfg in d['toolsets'].items():
-    tools = [t['name'] for t in cfg.get('tools', [])]
-    print(f'toolset={name}, tools={tools}')
-"
-# Ожидается: toolset=kb/stack, tools=['kb_search', 'kb_list_findings', 'kb_fetch_artifact']
+import sys; sys.path.insert(0,'/venv/lib/python3.11/site-packages'); sys.path.insert(0,'/app')
+from holmes.config import Config
+te = Config.load_from_env().create_toolcalling_llm(dal=None).tool_executor
+for ts in te.toolsets:
+    if 'kb' in ts.name:
+        print(f'{ts.name}: enabled={ts.enabled}, tools={[t.name for t in ts.tools]}')
+" 2>&1 | grep -v WARNING
+# Ожидается: kb/stack: enabled=True, tools=['kb_search', 'kb_list_findings', 'kb_fetch_artifact']
+
+# 3. Проверить по логам старта пода
+$K logs -n holmesgpt $HOLMES_POD | grep "Toolset kb"
+# Ожидается: ✅ Toolset kb/stack
+
+# 4. Если toolset DISABLED — убедиться что в Helm values есть:
+$K get application holmesgpt -n argocd \
+  -o jsonpath='{.spec.source.helm.values}' | grep -A1 "kb/stack"
+# Ожидается:
+#   kb/stack:
+#     enabled: true
 ```
 
 ### Проверить embedding-svc (нужен для kb_search)
@@ -779,7 +828,7 @@ for ts, size, key in files[:10]:
 $K exec -n holmesgpt $HOLMES_POD -- python3 -c "
 import urllib.request, json
 req = urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     data=json.dumps({
         'ask': 'ОБЯЗАТЕЛЬНО используй инструмент kb_search с запросом \"security vulnerabilities\" '
                'и kb_list_findings с doc_type=\"finding_kubescape\". '
@@ -787,7 +836,7 @@ req = urllib.request.Request(
     }).encode(),
     headers={'Content-Type': 'application/json'}, method='POST'
 )
-with urllib.request.urlopen(req, timeout=120) as r:
+with urllib.request.urlopen(req, timeout=600) as r:
     resp = json.loads(r.read())
     print('Analysis:', resp['analysis'][:500])
     print('Tool calls:', [t.get('name') for t in resp.get('tool_calls', [])])
@@ -800,7 +849,7 @@ with urllib.request.urlopen(req, timeout=120) as r:
 
 ```bash
 export K="kubectl --kubeconfig ~/proj/cross/kubeconfig_6005021"
-HP=$($K get pod -n holmesgpt -l app.kubernetes.io/name=holmes -o jsonpath='{.items[0].metadata.name}')
+HP=$($K get pods -n holmesgpt --no-headers | grep "holmesgpt-holmes.*Running" | awk '{print $1}')
 
 # 1. Kubescape — поиск по security
 $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py search "privilege root containers" 5 mvp-cloud
@@ -814,17 +863,21 @@ $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list topology 3 mvp-
 # 4. Все документы (обзор)
 $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list "" 20 mvp-cloud
 
-# 5. Получить сырой файл (подставить путь из source: выше)
-$K exec -n holmesgpt $HP -- curl -s -u minioadmin:minioadmin \
-  "http://minio.kb-system.svc:9000/kb-artifacts/<path>"
+# 5. Скачать сырой файл из MinIO (boto3, AWS4 — curl -u НЕ работает)
+$K exec -n holmesgpt $HP -- \
+  python3 /kb-scripts/kb_tools.py fetch "raw/kubescape/mvp-cloud/<ts>/findings.json"
 
-# 6. Спросить HolmesGPT через API
+# 6. Проверить статус toolset
+$K logs -n holmesgpt $HP | grep "Toolset kb"
+# Ожидается: ✅ Toolset kb/stack
+
+# 7. Спросить HolmesGPT через API (порт 5050, таймаут 600s)
 $K exec -n holmesgpt $HP -- python3 -c "
 import urllib.request, json
 r = urllib.request.urlopen(urllib.request.Request(
-    'http://localhost:80/api/chat',
+    'http://localhost:5050/api/chat',
     json.dumps({'ask': 'Найди security проблемы в кластере используя kb-stack'}).encode(),
-    {'Content-Type': 'application/json'}, 'POST'), timeout=120)
+    {'Content-Type': 'application/json'}, 'POST'), timeout=600)
 print(json.loads(r.read())['analysis'])
 "
 ```

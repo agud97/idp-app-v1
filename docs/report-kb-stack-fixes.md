@@ -441,6 +441,161 @@ git push origin main
 
 ---
 
+## Проблема 12: kb/stack toolset — статус DISABLED
+
+### Симптомы
+HolmesGPT не вызывал `kb_search`, `kb_list_findings`, `kb_fetch_artifact`. В логах видны только вызовы `bash`, `kubernetes_jq_query`, `fetch_runbook`.
+
+### Диагностика
+```bash
+kubectl exec -n holmesgpt <holmes-pod> -- python3 -c "
+import sys; sys.path.insert(0,'/venv/lib/python3.11/site-packages'); sys.path.insert(0,'/app')
+from holmes.config import Config
+c = Config.load_from_env()
+te = c.create_toolcalling_llm(dal=None).tool_executor
+for ts in te.toolsets:
+    if not ts.enabled:
+        print(f'DISABLED: {ts.name}')
+"
+# Вывод: DISABLED: kb/stack
+```
+
+Также видно в логах при старте пода:
+```
+# До фикса: kb/stack НЕТ в списке
+✅ Toolset kubernetes/core
+✅ Toolset bash
+# ...
+# kb/stack не упоминается
+
+# После фикса:
+✅ Toolset kb/stack
+```
+
+### Причина
+`kb/stack` — custom toolset, загружается из файла в `toolsets/`. Файл смонтирован корректно, но в Helm values раздел `toolsets:` явно перечисляет только разрешённые тулсеты. Отсутствие `kb/stack` в списке = статус DISABLED, инструменты не передаются LLM.
+
+Это специфика HolmesGPT v0.19.0: custom YAML-toolsets требуют явного включения в Helm values так же, как встроенные.
+
+### Исправление
+```yaml
+# applications/holmesgpt.yaml — добавлено в секцию toolsets:
+toolsets:
+  # ... существующие toolsets ...
+  kb/stack:
+    enabled: true
+```
+
+```bash
+git add applications/holmesgpt.yaml
+git commit -m "fix: enable kb/stack toolset in HolmesGPT Helm values"
+git push origin main
+# ArgoCD синкает, pod перезапускается автоматически
+```
+
+---
+
+## Проблема 13: Jinja2 фильтр `| quote` не поддерживается HolmesGPT
+
+### Симптомы
+При вызове `kb_list_findings` HolmesGPT возвращал HTTP 500:
+```
+jinja2.exceptions.TemplateAssertionError: No filter named 'quote'.
+```
+
+### Диагностика
+Ошибка в трейсбеке:
+```
+File "/app/holmes/core/tools.py", line 474, in get_parameterized_one_liner
+    template = Template(cmd_or_script)
+jinja2.exceptions.TemplateAssertionError: No filter named 'quote'.
+```
+
+Источник: шаблон команды в toolset YAML:
+```yaml
+command: >
+  python3 /kb-scripts/kb_tools.py list
+  {{ doc_type | default("") | quote }}   ← проблема здесь
+```
+
+### Причина
+`| quote` — фильтр из Ansible (Jinja2 + Ansible extensions). HolmesGPT использует стандартный Jinja2 без Ansible-расширений. Этот фильтр недоступен.
+
+### Исправление
+```yaml
+# platform/holmesgpt/kb-stack-toolset.yaml
+# Было:
+{{ doc_type | default("") | quote }}
+# Стало:
+{{ doc_type | default("") }}
+```
+
+```bash
+git add platform/holmesgpt/kb-stack-toolset.yaml
+git commit -m "fix: remove unsupported jinja2 'quote' filter from kb_list_findings"
+git push origin main
+# ArgoCD синкает holmesgpt-configs, затем нужен rollout restart:
+kubectl rollout restart deployment/holmesgpt-holmes -n holmesgpt
+```
+
+---
+
+## Проблема 14: kb_fetch_artifact — curl Basic auth несовместим с MinIO S3 API
+
+### Симптомы
+`kb_fetch_artifact` возвращал XML ошибку вместо данных:
+```xml
+<Error><Code>InvalidRequest</Code>
+<Message>The authorization mechanism you have provided is not supported.
+Please use AWS4-HMAC-SHA256.</Message></Error>
+```
+
+### Диагностика
+Команда `kb_fetch_artifact` использовала `curl -u minioadmin:minioadmin`:
+```yaml
+command: >
+  curl -s --max-time 30
+  -u minioadmin:minioadmin
+  "http://minio.kb-system.svc:9000/kb-artifacts/{{ path }}"
+```
+Вызов `curl -u` отправляет HTTP Basic Auth. MinIO S3 API (порт 9000) требует подписанные запросы по стандарту AWS Signature V4 (HMAC-SHA256). Basic auth поддерживается только MinIO Console (порт 9001).
+
+### Исправление
+Команда переписана на `python3 /kb-scripts/kb_tools.py fetch` — использует boto3, который выполняет корректную подпись AWS4:
+
+```python
+# kb_tools.py — добавлена функция cmd_fetch:
+def cmd_fetch(path):
+    import boto3
+    s3 = boto3.client("s3",
+        endpoint_url="http://minio.kb-system.svc:9000",
+        aws_access_key_id="minioadmin",
+        aws_secret_access_key="minioadmin",
+        region_name="us-east-1")
+    body = s3.get_object(Bucket="kb-artifacts", Key=path)["Body"].read()
+    text = body.decode("utf-8", errors="replace")
+    try:
+        print(json.dumps(json.loads(text), indent=2)[:8000])
+    except Exception:
+        print(text[:8000])
+```
+
+```yaml
+# kb-stack-toolset.yaml — новая команда:
+command: >
+  python3 /kb-scripts/kb_tools.py fetch
+  "{{ path }}"
+```
+
+```bash
+git add platform/holmesgpt/kb-stack-toolset.yaml
+git commit -m "fix: kb_fetch_artifact use boto3 instead of curl Basic auth"
+git push origin main
+kubectl rollout restart deployment/holmesgpt-holmes -n holmesgpt
+```
+
+---
+
 ## Итоговое состояние после исправлений
 
 | Компонент | Статус | Данные |
@@ -452,7 +607,18 @@ git push origin main
 | normalizer | ✅ Completed | 68 docs, real 384-dim vectors |
 | Qdrant kb_docs_mvp-cloud | ✅ Green | 68 points, size=384, Cosine |
 | holmesgpt-configs | ✅ ArgoCD Synced | all toolsets managed by git |
-| HolmesGPT kb/stack toolset | ✅ Mounted | kb_search, kb_list_findings, kb_fetch_artifact |
+| HolmesGPT kb/stack toolset | ✅ ENABLED | kb_search, kb_list_findings, kb_fetch_artifact |
+
+Верификация E2E: HolmesGPT реально вызывает kb-stack инструменты. Пример из лога запроса:
+```
+✅ Toolset kb/stack
+Running tool #1 kb_search: python3 /kb-scripts/kb_tools.py search "'security problems'" 10 mvp-cloud
+  Finished #1 in 0.12s, output length: 4,866 characters
+Running tool #2 kb_search: python3 /kb-scripts/kb_tools.py search "'kubescape security findings'" 5 mvp-cloud
+  Finished #2 in 0.13s
+Running tool #3 kb_list_findings: ...
+Running tool #4 kb_fetch_artifact: ...
+```
 
 ### Команды для верификации
 ```bash
