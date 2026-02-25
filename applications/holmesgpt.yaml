@@ -39,6 +39,8 @@ spec:
             enabled: true
             config:
               include_default_allow_deny_list: true
+          kb/stack:
+            enabled: true
 
         # Custom runbooks via additionalVolumes (supported in 0.19.0)
         additionalVolumes:
