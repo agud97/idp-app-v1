@@ -1,0 +1,174 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-stack-toolset
+  namespace: holmesgpt
+data:
+  kb-stack-toolset.yaml: |
+    toolsets:
+      kb/stack:
+        description: |
+          Query Kubernetes cluster knowledge base built from Kubescape security scans,
+          Popeye linting reports, and Kubevious topology snapshots.
+          Use these tools to find security findings, topology info, and resource issues.
+
+        prerequisites:
+          - command: "python3 --version"
+
+        tools:
+          - name: kb_search
+            description: |
+              Semantic search across kb-stack knowledge base (Kubescape findings,
+              Popeye reports, Kubevious topology). Returns top results with source.
+              Parameters:
+              - query: Search query (required). E.g. "pods without resource limits"
+              - top_k: Number of results to return (default: 10)
+              - cluster_id: Cluster ID (default: mvp-cloud)
+            command: >
+              python3 /kb-scripts/kb_tools.py search
+              "{{ query }}"
+              {{ top_k | default(10) }}
+              {{ cluster_id | default("mvp-cloud") }}
+
+          - name: kb_list_findings
+            description: |
+              List documents from kb-stack knowledge base filtered by type.
+              Parameters:
+              - doc_type: One of: finding_kubescape, finding_popeye, topology, object_card (default: all)
+              - limit: Number of results (default: 20)
+              - cluster_id: Cluster ID (default: mvp-cloud)
+            command: >
+              python3 /kb-scripts/kb_tools.py list
+              {{ doc_type | default("") | quote }}
+              {{ limit | default(20) }}
+              {{ cluster_id | default("mvp-cloud") }}
+
+          - name: kb_fetch_artifact
+            description: |
+              Fetch a raw artifact from MinIO knowledge base storage by its path.
+              Use source_path returned by kb_search or kb_list_findings.
+              Parameters:
+              - path: MinIO object path (e.g. raw/kubescape/mvp-cloud/20260225T.../findings.json)
+            command: >
+              curl -s --max-time 30
+              -u minioadmin:minioadmin
+              "http://minio.kb-system.svc:9000/kb-artifacts/{{ path }}"
+
+  kb_tools.py: |
+    #!/usr/bin/env python3
+    """kb-stack helper tools for HolmesGPT."""
+    import json
+    import sys
+    import urllib.request
+    import urllib.error
+    import urllib.parse
+
+    EMBEDDING_SVC = "http://embedding-svc.kb-system.svc:7997"
+    QDRANT_SVC    = "http://qdrant.qdrant.svc.cluster.local:6333"
+
+
+    def http_post(url, payload, timeout=30):
+        data = json.dumps(payload).encode()
+        req = urllib.request.Request(
+            url, data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+
+
+    def get_embedding(text):
+        resp = http_post(
+            f"{EMBEDDING_SVC}/v1/embeddings",
+            {"input": text, "model": "all-MiniLM-L6-v2"},
+        )
+        return resp["data"][0]["embedding"]
+
+
+    def cmd_search(query, top_k, cluster_id):
+        print(f"Searching kb_docs_{cluster_id} for: {query!r}", flush=True)
+        try:
+            vector = get_embedding(query)
+        except Exception as e:
+            print(f"ERROR: embedding service unavailable: {e}")
+            sys.exit(1)
+
+        results = http_post(
+            f"{QDRANT_SVC}/collections/kb_docs_{cluster_id}/points/search",
+            {
+                "vector": vector,
+                "limit": int(top_k),
+                "with_payload": True,
+                "score_threshold": 0.1,
+            },
+        )
+
+        items = results.get("result", [])
+        if not items:
+            print("No results found.")
+            return
+
+        print(f"\nFound {len(items)} results:\n")
+        for item in items:
+            p = item.get("payload", {})
+            score = item.get("score", 0)
+            print(f"[score={score:.3f}] doc_type={p.get('doc_type', '?')}")
+            print(f"  source: {p.get('source_path', '?')}")
+            print(f"  text: {p.get('embed_text', p.get('text', ''))[:400]}")
+            print("---")
+
+
+    def cmd_list(doc_type, limit, cluster_id):
+        payload = {
+            "limit": int(limit),
+            "with_payload": True,
+        }
+        if doc_type:
+            payload["filter"] = {
+                "must": [{"key": "doc_type", "match": {"value": doc_type}}]
+            }
+
+        results = http_post(
+            f"{QDRANT_SVC}/collections/kb_docs_{cluster_id}/points/scroll",
+            payload,
+        )
+
+        items = results.get("result", {}).get("points", [])
+        if not items:
+            print("No documents found.")
+            return
+
+        print(f"\nFound {len(items)} documents (type={doc_type or 'all'}):\n")
+        for item in items:
+            p = item.get("payload", {})
+            print(f"id={item.get('id', '?')} doc_type={p.get('doc_type', '?')}")
+            print(f"  source: {p.get('source_path', '?')}")
+            print(f"  timestamp: {p.get('timestamp', '?')}")
+            print(f"  text: {p.get('embed_text', '')[:200]}")
+            print("---")
+
+
+    def main():
+        if len(sys.argv) < 2:
+            print("Usage: kb_tools.py <search|list> [args...]")
+            sys.exit(1)
+
+        cmd = sys.argv[1]
+        if cmd == "search":
+            query      = sys.argv[2] if len(sys.argv) > 2 else ""
+            top_k      = sys.argv[3] if len(sys.argv) > 3 else "10"
+            cluster_id = sys.argv[4] if len(sys.argv) > 4 else "mvp-cloud"
+            cmd_search(query, top_k, cluster_id)
+        elif cmd == "list":
+            doc_type   = sys.argv[2] if len(sys.argv) > 2 else ""
+            limit      = sys.argv[3] if len(sys.argv) > 3 else "20"
+            cluster_id = sys.argv[4] if len(sys.argv) > 4 else "mvp-cloud"
+            cmd_list(doc_type, limit, cluster_id)
+        else:
+            print(f"Unknown command: {cmd}")
+            sys.exit(1)
+
+
+    if __name__ == "__main__":
+        main()

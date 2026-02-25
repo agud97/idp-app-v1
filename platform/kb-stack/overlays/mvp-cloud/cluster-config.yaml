@@ -9,5 +9,5 @@ data:
   QDRANT_ENDPOINT: http://qdrant.qdrant.svc.cluster.local:6333
   HOLMES_ENDPOINT: http://holmesgpt-holmes.holmesgpt.svc
   KUBEVIOUS_ENDPOINT: http://kubevious-backend-clusterip.kb-system.svc:4000
-  KUBEVIOUS_SNAPSHOT_PATH: /api/snapshot
+  EMBEDDING_ENDPOINT: http://embedding-svc.kb-system.svc:7997
   SCHEDULE: "*/30 * * * *"

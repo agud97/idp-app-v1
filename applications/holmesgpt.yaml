@@ -48,6 +48,9 @@ spec:
           - name: sre-runbooks
             configMap:
               name: sre-runbooks
+          - name: kb-stack-toolset
+            configMap:
+              name: kb-stack-toolset
         additionalVolumeMounts:
           - name: custom-runbooks
             mountPath: /app/holmes/plugins/runbooks/custom-runbooks.yaml
@@ -55,6 +58,12 @@ spec:
           - name: sre-runbooks
             mountPath: /app/holmes/plugins/runbooks/sre-runbooks.yaml
             subPath: sre-runbooks.yaml
+          - name: kb-stack-toolset
+            mountPath: /app/holmes/plugins/toolsets/kb-stack-toolset.yaml
+            subPath: kb-stack-toolset.yaml
+          - name: kb-stack-toolset
+            mountPath: /kb-scripts/kb_tools.py
+            subPath: kb_tools.py
 
         # Resources
         resources:

@@ -8,5 +8,5 @@ resources:
   - kubevious
   - normalizer
   - rbac
-  - networkpolicy
   - holmesgpt
+  - embedding-svc

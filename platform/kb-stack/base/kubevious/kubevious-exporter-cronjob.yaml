@@ -14,6 +14,27 @@ spec:
         spec:
           serviceAccountName: kubevious-exporter
           restartPolicy: OnFailure
+          initContainers:
+            - name: get-snapshot-id
+              image: mysql:8.0
+              env:
+                - name: MYSQL_PWD
+                  valueFrom:
+                    secretKeyRef:
+                      name: kubevious-mysql-secret-root
+                      key: MYSQL_ROOT_PASSWORD
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -eu
+                  SID=$(mysql -h kubevious-mysql -u root -N -e \
+                    "SELECT LOWER(HEX(snapshot_id)) FROM kubevious.snap_items LIMIT 1;")
+                  echo "$SID" > /shared/snapshot_id
+                  echo "Snapshot ID: $SID"
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
           containers:
             - name: fetcher
               image: curlimages/curl:8.5.0
@@ -24,9 +45,50 @@ spec:
                 - /bin/sh
                 - -c
                 - |
-                  set -euo pipefail
-                  curl -sS "$KUBEVIOUS_ENDPOINT$KUBEVIOUS_SNAPSHOT_PATH" -o /tmp/topology.json
+                  set -eu
+                  SID=$(cat /shared/snapshot_id)
+                  BASE="$KUBEVIOUS_ENDPOINT"
+                  echo "Using snapshot: $SID"
+                  echo '{"nodes":[' > /tmp/topology.json
+                  FIRST=1
+
+                  fetch_tree() {
+                    local dn="$1"
+                    local depth="$2"
+                    if [ "$depth" -gt 6 ]; then return; fi
+
+                    node=$(curl -s -m 10 -G "$BASE/api/v1/diagram/node" \
+                      --data-urlencode "snapshot=$SID" --data-urlencode "dn=$dn")
+                    props=$(curl -s -m 10 -G "$BASE/api/v1/diagram/props" \
+                      --data-urlencode "snapshot=$SID" --data-urlencode "dn=$dn")
+                    alerts=$(curl -s -m 10 -G "$BASE/api/v1/diagram/alerts" \
+                      --data-urlencode "snapshot=$SID" --data-urlencode "dn=$dn")
+
+                    if [ "$FIRST" = "1" ]; then FIRST=0; else printf ',' >> /tmp/topology.json; fi
+                    printf '{"dn":"%s","node":%s,"props":%s,"alerts":%s}' \
+                      "$dn" "${node:-null}" "${props:-[]}" "${alerts:-[]}" >> /tmp/topology.json
+
+                    children=$(curl -s -m 10 -G "$BASE/api/v1/diagram/children" \
+                      --data-urlencode "snapshot=$SID" --data-urlencode "dn=$dn")
+                    if [ -z "$children" ] || [ "$children" = "[]" ]; then return; fi
+
+                    for child in $(echo "$children" | tr -d '[]"' | tr ',' ' '); do
+                      if [ "$dn" = "root" ]; then
+                        child_dn="root/$child"
+                      else
+                        child_dn="$dn/$child"
+                      fi
+                      fetch_tree "$child_dn" $((depth + 1))
+                    done
+                  }
+
+                  fetch_tree "root" 0
+                  echo ']}' >> /tmp/topology.json
+                  SIZE=$(wc -c < /tmp/topology.json)
+                  echo "Topology exported: ${SIZE} bytes"
               volumeMounts:
+                - name: shared
+                  mountPath: /shared
                 - name: tmp
                   mountPath: /tmp
             - name: uploader
@@ -50,20 +112,24 @@ spec:
                 - -c
                 - |
                   set -euo pipefail
-                  for i in $(seq 1 30); do
+                  for i in $(seq 1 60); do
                     [ -s /tmp/topology.json ] && break
-                    sleep 2
+                    sleep 5
                   done
-                  if [ ! -f /tmp/topology.json ]; then
-                    echo '{}' > /tmp/topology.json
+                  if [ ! -s /tmp/topology.json ]; then
+                    echo "ERROR: topology.json not ready after 5min"
+                    exit 1
                   fi
                   ts=$(date -u +"%Y%m%dT%H%M%SZ")
                   mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
                   mc mb -p "local/kb-artifacts" || true
                   mc cp "/tmp/topology.json" "local/kb-artifacts/raw/kubevious/${CLUSTER_ID}/${ts}/topology.json"
+                  echo "Uploaded to kb-artifacts/raw/kubevious/${CLUSTER_ID}/${ts}/topology.json"
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp
           volumes:
+            - name: shared
+              emptyDir: {}
             - name: tmp
               emptyDir: {}
