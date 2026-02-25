@@ -16,7 +16,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: scanner
-              image: quay.io/kubescape/kubescape-cli:v3.0.3
+              image: quay.io/kubescape/kubescape-cli:v3.0.48
               envFrom:
                 - configMapRef:
                     name: kb-stack-config
