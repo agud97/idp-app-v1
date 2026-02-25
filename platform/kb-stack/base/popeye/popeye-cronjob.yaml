@@ -21,9 +21,26 @@ spec:
                 - /bin/sh
                 - -c
                 - |
-                  set -euo pipefail
-                  popeye -o json > /tmp/report.json || true
-                  echo "Popeye done: $(wc -c < /tmp/report.json) bytes"
+                  popeye -o json > /tmp/report.raw 2>/dev/null || true
+                  echo "Popeye raw: $(wc -c < /tmp/report.raw) bytes"
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+            - name: extract-json
+              image: python:3.11-slim
+              command:
+                - python3
+                - -c
+                - |
+                  import re, sys
+                  raw = open('/tmp/report.raw', 'rb').read().decode('utf-8', errors='ignore')
+                  # strip ANSI escape codes
+                  clean = re.sub(r'\x1b\[[0-9;]*[mGKHF]', '', raw)
+                  # find start of JSON object
+                  idx = clean.find('{')
+                  result = clean[idx:].strip() if idx >= 0 else '{}'
+                  open('/tmp/report.json', 'w').write(result)
+                  print(f'Extracted JSON: {len(result)} bytes')
               volumeMounts:
                 - name: tmp
                   mountPath: /tmp

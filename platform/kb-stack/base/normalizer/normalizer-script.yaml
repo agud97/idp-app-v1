@@ -32,28 +32,37 @@ data:
       """Extract a concise text summary suitable for embedding."""
       try:
         if doc_type == "finding_kubescape":
-          # Kubescape: top-level is typically a dict with results array
+          # Kubescape JSON: {summaryDetails: {controls: {C-0013: {name, status, ResourceCounters}}}, results: [...]}
           if isinstance(data, dict):
-            name = data.get("metadata", {}).get("name", data.get("name", ""))
-            severity = data.get("severity", "")
-            desc = data.get("description", "")
-            resources = str(data.get("failedResources", ""))
-            return f"kubescape finding: {name} severity={severity} {desc} resources={resources}"[:500]
+            controls = data.get("summaryDetails", {}).get("controls", {})
+            failed = []
+            for ctrl_id, ctrl in controls.items():
+              if ctrl.get("status") == "failed":
+                name = ctrl.get("name", ctrl_id)
+                cnt = ctrl.get("ResourceCounters", {}).get("failedResources", 0)
+                failed.append(f"{name}({cnt} failed)")
+            if failed:
+              return "kubescape security findings: " + ", ".join(failed[:15])
         elif doc_type == "finding_popeye":
+          # Popeye JSON: {popeye: {sanitizers: [{sanitizer, tally: {error, warning, ok}}]}}
           if isinstance(data, dict):
             popeye = data.get("popeye", data)
             sanitizers = popeye.get("sanitizers", [])
-            parts = ["popeye report:"]
-            for s in sanitizers[:10]:
+            parts = ["popeye lint report:"]
+            for s in sanitizers[:15]:
               name = s.get("sanitizer", "")
-              issues = s.get("issuesCount", 0)
-              if issues:
-                parts.append(f"{name}:{issues}issues")
+              tally = s.get("tally", {})
+              errors = tally.get("error", 0)
+              warnings = tally.get("warning", 0)
+              if errors or warnings:
+                parts.append(f"{name} errors={errors} warnings={warnings}")
             return " ".join(parts)[:500]
         elif doc_type == "topology":
+          # Kubevious: {nodes: [{dn, node, props, alerts}]}
           if isinstance(data, dict):
-            keys = list(data.keys())[:20]
-            return "kubevious topology nodes: " + " ".join(str(k) for k in keys)[:500]
+            nodes = data.get("nodes", [])
+            dns = [n.get("dn", "") for n in nodes[:20] if n.get("dn")]
+            return "kubevious topology: " + " | ".join(dns)[:500]
       except Exception:
         pass
       # Fallback: truncated JSON
