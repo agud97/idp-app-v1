@@ -24,3 +24,32 @@ helmCharts:
           failureThreshold: 6
 resources:
   - kubevious-exporter-cronjob.yaml
+patches:
+  - target:
+      kind: Deployment
+      name: kubevious-backend
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe/initialDelaySeconds
+        value: 30
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe/timeoutSeconds
+        value: 2
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe/periodSeconds
+        value: 10
+      - op: add
+        path: /spec/template/spec/containers/0/livenessProbe/failureThreshold
+        value: 6
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe/initialDelaySeconds
+        value: 10
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe/timeoutSeconds
+        value: 2
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe/periodSeconds
+        value: 10
+      - op: add
+        path: /spec/template/spec/containers/0/readinessProbe/failureThreshold
+        value: 6
