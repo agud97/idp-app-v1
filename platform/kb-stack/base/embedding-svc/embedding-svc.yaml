@@ -115,19 +115,24 @@ spec:
               memory: "512Mi"
             limits:
               cpu: "1000m"
-              memory: "1Gi"
+              memory: "2Gi"
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 7997
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 20
           readinessProbe:
             httpGet:
               path: /health
               port: 7997
-            initialDelaySeconds: 120
             periodSeconds: 10
-            failureThreshold: 6
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
               port: 7997
-            initialDelaySeconds: 180
             periodSeconds: 30
             failureThreshold: 3
       volumes:
