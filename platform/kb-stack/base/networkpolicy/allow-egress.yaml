@@ -21,6 +21,24 @@ spec:
           port: 9000
     - to:
         - ipBlock:
+            cidr: 10.105.248.237/32
+      ports:
+        - protocol: TCP
+          port: 3306
+    - to:
+        - ipBlock:
+            cidr: 10.96.188.166/32
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - ipBlock:
+            cidr: 10.110.163.108/32
+      ports:
+        - protocol: TCP
+          port: 4000
+    - to:
+        - ipBlock:
             cidr: 10.96.0.1/32
       ports:
         - protocol: TCP
