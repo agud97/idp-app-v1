@@ -914,6 +914,187 @@ qa-backend, qa-platform) contain specific services.
 
 ---
 
+### Пример 2: Popeye lint отчёт — sanitizers с ошибками
+
+**Запрос:**
+```json
+{
+  "ask": "Use kb_list_findings with doc_type=finding_popeye to get the Popeye lint report path. Then use kb_fetch_artifact to fetch the full report. List all sanitizers with their error and warning counts, sorted by severity. Focus on sections where errors or warnings > 0."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_list_findings` — doc_type=finding_popeye → нашёл 20 документов с путями к отчётам
+2. `kb_fetch_artifact` × 6 — перебирал разные timestamp'ы, пока не нашёл валидный JSON-отчёт
+3. Два fetch'а вернули ANSI-вывод (старые отчёты до фикса формата) — LLM игнорировал и пробовал следующий
+
+**Ответ HolmesGPT:**
+```
+Based on the Popeye report I was able to fetch, here's my analysis of sanitizers
+with errors or warnings:
+
+## Popeye Sanitizer Analysis (2026-02-25T21:00:02Z)
+Overall score: 97/A
+
+### Sanitizers with Issues (Errors/Warnings > 0):
+
+1. **Ingress Linter** — 8 warnings
+   Issues: Multiple ingress resources using numeric port numbers instead of
+   named ports (POP-1403). Affected resources:
+   - test-multi-service/backend, test-multi-service/frontend
+   - test-simple-app/test-simple-app, frontend/frontend
+   - qa-backend/backend, qa-frontend/frontend
+   - qa-platform/gateway, test-app-with-db/test-app-with-db
+
+### All other sanitizers — 0 errors, 0 warnings (score=100):
+cluster, ciliumclusterwidenetworkpolicies, ciliumendpoints, configmaps,
+cronjobs, daemonsets, deployments, horizontalpodautoscalers, jobs,
+namespaces, networkpolicies, persistentvolumes, pods, poddisruptionbudgets,
+replicasets, roles, rolebindings
+
+### Recommendations:
+The main issue is in the Ingress linter — all ingress resources should use
+named ports instead of numeric port numbers for better maintainability.
+
+The overall Popeye score is 97 with an "A" grade, showing that the cluster
+configuration is generally well-maintained.
+```
+
+**Токены:** ~29,000
+**Наблюдение:** `kb_fetch_artifact` работает с реальным boto3 через AWS4-HMAC-SHA256.
+LLM корректно обрабатывает ситуацию когда один fetch возвращает ошибку (файл не найден
+или неверный формат) — пробует следующий timestamp из списка.
+
+---
+
+### Пример 3: Kubescape security findings
+
+**Запрос:**
+```json
+{
+  "ask": "Use kb_list_findings with doc_type=finding_kubescape, then kb_fetch_artifact to get the full Kubescape security scan. List ALL failed controls sorted by number of failed resources (most critical first). Give brief explanation for each."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_list_findings` — doc_type=finding_kubescape → 20 документов
+2. `kb_fetch_artifact` × 3 — нашёл актуальный JSON-отчёт
+
+**Ответ HolmesGPT:**
+```
+Based on the Kubescape findings, here are the failed controls sorted by number
+of failed resources (most critical first):
+
+1. **Ingress and Egress blocked** (C-0030) — 55 failed
+   Severity: Medium
+   Network policies not configured to block ingress/egress traffic,
+   exposing workloads to unauthorized network access.
+
+2. **Non-root containers** (C-0013) — 54 failed
+   Severity: Medium
+   54 containers running as root — significant security concern.
+   If breached, attacker gets root access to the container.
+
+3. **Immutable container filesystem** (C-0017) — 48 failed
+   Severity: Low
+   Filesystem not set to read-only — allows unauthorized modifications
+   to running containers.
+
+4. **Allow privilege escalation** (C-0016) — 45 failed
+   Severity: Medium
+   Containers can escalate privileges (allowPrivilegeEscalation: true),
+   enabling attackers to gain elevated permissions.
+
+5. **Applications credentials in configuration files** (C-0012) — 4 failed
+   Severity: High
+   Credentials stored in config files instead of Secrets.
+   Risk: credentials exposed in plaintext.
+
+6. **Prevent containers from allowing command execution** (C-0002) — 4 failed
+   Severity: Medium
+   Containers allow exec/attach — attackers can run commands.
+
+7. **Administrative Roles** (C-0035) — 3 failed
+   Severity: Medium
+   Over-privileged RBAC roles in the cluster.
+
+8. **Host PID/IPC privileges** (C-0038) — 1 failed
+   Severity: High
+   1 container has host PID/IPC access — allows access to host processes.
+
+Most critical issues: C-0030 (network policies), C-0013 (root containers),
+C-0016 (privilege escalation). Address these first to improve security posture.
+```
+
+**Наблюдение:** LLM успешно получил полный Kubescape JSON (983 KB) через `kb_fetch_artifact`,
+разобрал `summaryDetails.controls`, отсортировал по `failedResources` и дал структурированный ответ.
+
+---
+
+### Пример 4: Кросс-анализ — какие workloads под наибольшим риском
+
+**Запрос:**
+```json
+{
+  "ask": "I want to understand which specific workloads in the cluster are most at risk. Use kb_list_findings to get the kubescape report, then kb_fetch_artifact to read it. Find which namespaces and deployments have the most security violations (non-root, privilege escalation, immutable filesystem). Cross-reference with what you know about the cluster topology."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_list_findings` — doc_type=finding_kubescape
+2. `kb_fetch_artifact` × 2 — получил полный Kubescape JSON
+3. `kubectl_get_by_kind_in_cluster` — список всех deployments
+4. `kubectl_get_by_kind_in_namespace` × 3 — pods в qa-backend, qa-frontend, qa-platform
+5. `kb_search` × 3 — уточняющий поиск по конкретным controls
+6. `kubectl_get_yaml` × 5 — YAML конфигурации конкретных deployment'ов
+
+**Ответ HolmesGPT:**
+```
+# Most At-Risk Workloads in the Cluster
+
+Based on my investigation of the Kubescape findings and cluster configuration:
+
+## Top 3 Most At-Risk Namespaces
+
+1. qa-platform — 6 deployments с нарушениями безопасности
+   (auth, gateway, notifications, redis, users, worker — все без securityContext)
+
+2. qa-backend — 2 deployments (backend + backend-db)
+
+3. qa-frontend — 1 deployment (frontend)
+
+## Security Violations Summary
+- Non-root containers (C-0013): 54 failures — контейнеры запущены от root
+- Immutable container filesystem (C-0017): 48 failures — FS не read-only
+- Allow privilege escalation (C-0016): 45 failures — нет allowPrivilegeEscalation: false
+
+## Root Cause Analysis
+
+### qa-platform (Highest Risk)
+Все deployments лишены securityContext:
+- runAsNonRoot: true — не выставлен
+- readOnlyRootFilesystem: true — не выставлен
+- allowPrivilegeEscalation: false — не выставлен
+
+## Recommendations
+
+Для всех deployment'ов в qa-platform, qa-backend, qa-frontend:
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+  containers:
+    - securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+```
+
+**Токены:** ~35,000 (сложный запрос с 20+ tool calls)
+**Наблюдение:** Мощный пример комбинации kb-stack + kubernetes/core. LLM не только получил
+данные из Kubescape, но и реально прочитал YAML-конфиг deployments чтобы подтвердить проблему.
+
+---
+
 ## Шпаргалка: все инструменты за 30 секунд
 
 ```bash
