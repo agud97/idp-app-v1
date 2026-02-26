@@ -150,17 +150,21 @@ data:
 
     def cmd_fetch(path):
         """Fetch raw artifact from MinIO using boto3 (AWS4-HMAC-SHA256 auth)."""
+        import os
         try:
             sys.path.insert(0, "/venv/lib/python3.11/site-packages")
             import boto3  # noqa: PLC0415
         except ImportError as e:
             print(f"ERROR: boto3 not available: {e}")
             sys.exit(1)
+        endpoint  = os.environ.get("MINIO_ENDPOINT", "http://minio.kb-system.svc:9000")
+        access_key = os.environ.get("MINIO_ACCESS_KEY", "minioadmin")
+        secret_key = os.environ.get("MINIO_SECRET_KEY", "minioadmin")
         s3 = boto3.client(
             "s3",
-            endpoint_url="http://minio.kb-system.svc:9000",
-            aws_access_key_id="minioadmin",
-            aws_secret_access_key="minioadmin",
+            endpoint_url=endpoint,
+            aws_access_key_id=access_key,
+            aws_secret_access_key=secret_key,
             region_name="us-east-1",
         )
         body = s3.get_object(Bucket="kb-artifacts", Key=path)["Body"].read()

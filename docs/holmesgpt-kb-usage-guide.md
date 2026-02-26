@@ -845,6 +845,75 @@ with urllib.request.urlopen(req, timeout=600) as r:
 
 ---
 
+## Реальные примеры: запросы и ответы
+
+Ниже — реальные запросы к HolmesGPT с реальными ответами, полученными 2026-02-25.
+Модель: `qwen3-coder-30b-a3b-instruct-mlx` через LMStudio.
+
+---
+
+### Пример 1: Список namespaces кластера
+
+**Запрос:**
+```json
+{
+  "ask": "Use kb_search to find all namespaces in the cluster. List them all with a brief description of what runs in each namespace."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_search` — query: `"namespaces in cluster"`, top_k: 100 → вернул topology-документы из Kubevious
+2. `kubectl_get_by_kind_in_cluster` — получил список всех namespaces
+3. `kubectl_get_by_kind_in_namespace` × 13 — прошёлся по каждому namespace и получил deployments/services
+
+**Ответ HolmesGPT:**
+```
+Based on my investigation of the Kubernetes cluster namespaces, here's a list of all
+namespaces with descriptions of what runs in each:
+
+ 1. argocd             — Contains ArgoCD deployment for GitOps management including
+                         applicationset-controller, dex-server, notifications-controller,
+                         redis, repo-server, and server components.
+ 2. cilium-secrets     — Contains Cilium networking secrets managed by Helm.
+ 3. crossplane-system  — Crossplane infrastructure provisioning system namespace.
+ 4. default            — Default namespace with no resources found.
+ 5. frontend           — Contains a frontend application deployment (nginx:alpine)
+                         with ClusterIP service.
+ 6. headscale          — Contains headscale deployment for Tailscale VPN management
+                         (headscale/headscale:0.23.0).
+ 7. holmesgpt          — Contains HolmesGPT monitoring components including
+                         alertmanager-bridge and holmes services.
+ 8. kb-system          — Kubernetes-based knowledge system namespace.
+ 9. kube-node-lease    — System namespace for node lease management.
+10. kube-public        — Publicly accessible namespace for cluster-wide resources.
+11. kube-system        — System namespace: cilium-operator, coredns.
+12. kubescape          — Kubescape security scanning system namespace.
+13. llm-proxy          — Contains llm-proxy deployment (nginx + tailscale sidecar).
+14. monitoring         — Contains VictoriaMetrics stack: grafana, kube-state-metrics,
+                         victoria-metrics-operator, vmagent, vmalert, vmsingle.
+15. open-webui         — Contains Open WebUI pipelines
+                         (ghcr.io/open-webui/pipelines:main).
+16. openebs            — OpenEBS storage system namespace.
+17. qa-backend         — backend (nginx:alpine) + PostgreSQL database.
+18. qa-frontend        — frontend application (nginx:alpine).
+19. qa-platform        — auth, gateway, notifications, redis, users, worker services.
+20. qa-static-files    — Static files application (nginx:alpine).
+21. qdrant             — Empty namespace (no deployments).
+22. test-app-with-db   — Test application (nginx:alpine).
+23. test-multi-service — backend, frontend, redis, worker test environment.
+24. test-simple-app    — Simple test application (nginx:alpine).
+25. victorialogs       — VictoriaMetrics logging components.
+
+The namespaces are organized by their purpose: system namespaces (kube-system,
+monitoring) contain core infrastructure, while application namespaces (frontend,
+qa-backend, qa-platform) contain specific services.
+```
+
+**Токены:** prompt=28,644 / completion=612 / total=29,256
+**Наблюдение:** LLM использовал `kb_search` для старта, но основную работу выполнил через `kubectl` инструменты. Это нормально — HolmesGPT комбинирует kb-stack с kubernetes/core toolset.
+
+---
+
 ## Шпаргалка: все инструменты за 30 секунд
 
 ```bash

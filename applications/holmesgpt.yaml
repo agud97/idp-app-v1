@@ -22,6 +22,19 @@ spec:
             value: "http://llm-proxy.llm-proxy.svc.cluster.local:8080/v1"
           - name: OPENAI_API_KEY
             value: "not-needed"
+          # MinIO credentials (для kb_fetch_artifact)
+          - name: MINIO_ENDPOINT
+            value: "http://minio.kb-system.svc:9000"
+          - name: MINIO_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: minio-credentials
+                key: accessKey
+          - name: MINIO_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: minio-credentials
+                key: secretKey
 
         # Toolsets
         toolsets:
