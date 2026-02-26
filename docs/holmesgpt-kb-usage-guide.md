@@ -1095,6 +1095,94 @@ Based on my investigation of the Kubescape findings and cluster configuration:
 
 ---
 
+### Пример 5: Topology — список namespaces и алерты Kubevious
+
+**Запрос:**
+```json
+{
+  "ask": "Use kb_search with query 'kubevious topology namespaces root ns' and top_k=5 to get topology data. The embed_text field contains a pipe-separated list of all namespaces. Then use kb_search again with 'kubevious alerts errors warnings' to find any topology alerts. Summarize: what namespaces exist in the cluster topology, and are there any alerts?"
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_search` — "kubevious topology namespaces root ns" → topology документы
+2. `kb_search` — "kubevious alerts errors warnings" → алерты
+3. `kb_list_findings` — doc_type=topology → список snapshot'ов
+4. `kb_fetch_artifact` × 2 — попробовал загрузить JSON (частично, 8KB)
+5. `kubectl_get_by_kind_in_cluster` — список namespaces через kubectl
+
+**Ответ HolmesGPT:**
+```
+## Namespaces in the Cluster
+
+The cluster contains 25 namespaces:
+argocd, cilium-secrets, crossplane-system, default, frontend, headscale,
+holmesgpt, kb-system, kube-node-lease, kube-public, kube-system, kubescape,
+llm-proxy, monitoring, open-webui, openebs, qa-backend, qa-frontend,
+qa-platform, qa-static-files, qdrant, test-app-with-db, test-multi-service,
+test-simple-app, victorialogs
+
+## Alerts in the Cluster
+
+1. Kubevious topology shows:
+   - Root node: 319 warnings, 37 errors (propagated from all children)
+   - Unused secrets in argocd and crossplane-system namespaces
+   - API Service disconnection issues (warnings)
+
+2. Kubescape is actively scanning the cluster (CronJob runs regularly).
+
+3. VictoriaLogs: collector pods running, partition mover completed.
+
+The most significant alerts are unused secrets and API connectivity issues
+being tracked by Kubevious.
+```
+
+**Наблюдение:** `kb_fetch_artifact` возвращает только первые 8KB из 345KB topology.json —
+LLM видит только начало файла. Для topology лучше использовать `kb_search`, который возвращает
+уже готовый embed_text со сводкой по namespace'ам.
+
+---
+
+### Пример 6: Быстрый общий health check кластера
+
+**Запрос:**
+```json
+{
+  "ask": "Do a quick cluster health summary using the kb-stack knowledge base. Use kb_search to search for findings across all sources, and kb_list_findings to list documents. Give me: 1) Overall security posture (from Kubescape) in 3-5 bullet points. 2) Linting status (from Popeye) in 2-3 bullet points. 3) Any topology alerts from Kubevious. Keep it concise - one paragraph per section."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_search` — "cluster health summary"
+2. `kb_list_findings` — finding_kubescape, finding_popeye, topology
+3. `kb_search` — "Kubescape security findings summary", "Popeye linting report details"
+
+**Ответ HolmesGPT:**
+```
+1) Overall security posture (Kubescape):
+   • 54 non-root container violations — контейнеры запущены от root
+   • 45 privilege escalation failures — allowPrivilegeEscalation не отключен
+   • 55 ingress/egress blocked issues — сетевые политики не настроены
+   • 48 immutable filesystem failures — readOnlyRootFilesystem не установлен
+   • 9 automatic service account mapping — избыточные права сервисных аккаунтов
+
+2) Linting status (Popeye):
+   • Detected configuration issues in resource definitions
+   • Ingress resources use numeric ports instead of named ports (8 warnings)
+
+3) Topology alerts (Kubevious):
+   • No specific topology alert information was available in indexed documents
+
+The cluster shows significant security concerns around container privileges and
+network policies, with multiple compliance failures across key security controls.
+```
+
+**Токены:** ~18,000 (быстрый запрос, 6 tool calls)
+**Наблюдение:** Самый эффективный тип запроса для быстрого обзора. LLM использует
+`kb_list_findings` + `kb_search` без тяжёлых fetches. Ответ готов за ~2-3 минуты.
+
+---
+
 ## Шпаргалка: все инструменты за 30 секунд
 
 ```bash
