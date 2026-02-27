@@ -1,6 +1,6 @@
 # HolmesGPT + kb-stack: Инструкция по использованию
 
-Этот документ описывает как задавать вопросы HolmesGPT с использованием данных из базы знаний кластера: Kubescape (security scan), Popeye (lint), Kubevious (topology).
+Этот документ описывает как задавать вопросы HolmesGPT с использованием данных из базы знаний кластера: Kubescape (security scan), Popeye (lint), Kubevious (topology), K8sGPT (runtime analyzer).
 
 ---
 
@@ -31,6 +31,7 @@
 |---|---|---|
 | `finding_kubescape` | Kubescape NSA scan | Security findings: failed controls, кол-во ресурсов |
 | `finding_popeye` | Popeye lint | Ошибки и предупреждения по ресурсам кластера |
+| `finding_k8sgpt` | K8sGPT runtime analyzer | Runtime проблемы: CrashLoop, missing endpoints, Ingress без класса, node affinity |
 | `topology` | Kubevious | Дерево ресурсов кластера, алерты, свойства нод |
 
 ---
@@ -480,6 +481,170 @@ DN (Distinguished Name) — путь в дереве:
 
 ---
 
+## Источник 4: K8sGPT (Runtime Analyzer)
+
+**doc_type:** `finding_k8sgpt`
+**Что хранится:** runtime-проблемы кластера, обнаруженные K8sGPT Operator — один документ на каждую проблему (не на файл). Источник: `kubectl get results -n k8sgpt-operator-system`.
+
+**Особенности K8sGPT vs Kubescape/Popeye:**
+- Kubescape — статический security compliance (не запущен ли root, есть ли NetworkPolicy)
+- Popeye — конфигурационный lint (правильно ли задан resource requests, named ports)
+- **K8sGPT** — runtime-диагностика: реальные проблемы в работающих ресурсах прямо сейчас
+
+**Типы находок (в кластере mvp-cloud на 2026-02-27):**
+
+| Kind | Пример | Что значит |
+|---|---|---|
+| `Pod` | `default/user-profile-import` | Pod не может запуститься (node affinity) |
+| `Ingress` | `frontend/frontend` | Не указан IngressClass |
+| `Service` | `kube-system/kube-scheduler` | Нет endpoints (label mismatch) |
+| `StatefulSet` | `argocd/argocd-application-controller` | Service не существует |
+| `Job` | `kb-system/kubevious-exporter-...` | Job завершился с ошибкой |
+| `ConfigMap` | `monitoring/grafana-ds` | ConfigMap не используется ни одним Pod |
+
+### Примеры вопросов к HolmesGPT
+
+#### Обзор runtime-проблем кластера
+
+```bash
+$K exec -n holmesgpt $HOLMES_POD -- python3 -c "
+import urllib.request, json
+req = urllib.request.Request(
+    'http://localhost:5050/api/chat',
+    data=json.dumps({
+        'ask': 'Используй kb_list_findings с doc_type=finding_k8sgpt чтобы получить '
+               'runtime-проблемы кластера mvp-cloud. '
+               'Сгруппируй находки по типу ресурса (Pod, Ingress, Service и т.д.) '
+               'и объясни что нужно исправить в первую очередь.'
+    }).encode(),
+    headers={'Content-Type': 'application/json'}, method='POST'
+)
+with urllib.request.urlopen(req, timeout=180) as r:
+    print(json.loads(r.read())['analysis'])
+"
+```
+
+#### Поиск проблемных Pod'ов
+
+```bash
+$K exec -n holmesgpt $HOLMES_POD -- python3 -c "
+import urllib.request, json
+req = urllib.request.Request(
+    'http://localhost:5050/api/chat',
+    data=json.dumps({
+        'ask': 'Используй kb_search с запросом \"pod crash restart failing node affinity\" '
+               'чтобы найти проблемные поды из k8sgpt базы знаний. '
+               'Затем используй kubernetes/core инструменты чтобы проверить текущее состояние '
+               'этих подов и объясни причину проблемы.'
+    }).encode(),
+    headers={'Content-Type': 'application/json'}, method='POST'
+)
+with urllib.request.urlopen(req, timeout=240) as r:
+    print(json.loads(r.read())['analysis'])
+"
+```
+
+#### Проблемы с Ingress и сетью
+
+```bash
+$K exec -n holmesgpt $HOLMES_POD -- python3 -c "
+import urllib.request, json
+req = urllib.request.Request(
+    'http://localhost:5050/api/chat',
+    data=json.dumps({
+        'ask': 'Найди все Ingress и Service проблемы в кластере используя kb_search '
+               'с запросами \"Ingress no IngressClass\" и \"Service no endpoints\". '
+               'Объясни что нужно сделать чтобы исправить каждую проблему.'
+    }).encode(),
+    headers={'Content-Type': 'application/json'}, method='POST'
+)
+with urllib.request.urlopen(req, timeout=180) as r:
+    print(json.loads(r.read())['analysis'])
+"
+```
+
+#### Прямой поиск (без LLM)
+
+```bash
+# Список всех k8sgpt находок
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py list finding_k8sgpt 20 mvp-cloud
+
+# Семантический поиск по runtime-проблемам
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py search "Ingress does not specify IngressClass" 10 mvp-cloud
+
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py search "Service has no endpoints" 5 mvp-cloud
+
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py search "pod node affinity scheduling" 5 mvp-cloud
+
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py search "Job failed error" 5 mvp-cloud
+
+# Посмотреть сырой результат из MinIO (весь список Result CRD)
+$K exec -n holmesgpt $HOLMES_POD -- \
+  python3 /kb-scripts/kb_tools.py fetch \
+  "raw/k8sgpt/mvp-cloud/<ts>/results.json" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+items = d.get('items', [])
+print(f'Total findings: {len(items)}')
+for item in items:
+    spec = item['spec']
+    if spec.get('kind') != 'ConfigMap':   # отфильтровать шум
+        errs = spec.get('error', [])
+        for e in (errs if isinstance(errs, list) else []):
+            text = e.get('text', e) if isinstance(e, dict) else e
+            print(f\"  [{spec.get('kind')}] {item['metadata']['name']}: {text[:120]}\")
+"
+```
+
+### Структура данных K8sGPT в Qdrant
+
+```
+embed_text (один doc на каждый Result item):
+  "k8sgpt finding: Ingress frontend/frontend - Ingress frontend/frontend does not specify an Ingress class."
+  "k8sgpt finding: Pod default/user-profile-import - 0/3 nodes are available: 3 node(s) didn't match Pod's node affinity/selector."
+  "k8sgpt finding: Service kube-system/kube-scheduler - Service has no endpoints, expected label component=kube-scheduler"
+
+Полный JSON (в MinIO raw/k8sgpt/...):
+  {
+    "apiVersion": "v1",
+    "kind": "List",
+    "items": [
+      {
+        "metadata": { "name": "frontendfrontend", "namespace": "k8sgpt-operator-system" },
+        "spec": {
+          "kind": "Ingress",
+          "name": "frontend/frontend",
+          "error": [{ "text": "Ingress frontend/frontend does not specify an Ingress class." }],
+          "details": ""    ← пусто при ai.enabled=false
+        }
+      }
+    ]
+  }
+```
+
+> **Важно:** `details` пустой при `ai.enabled: false`. Объяснение проблем даёт HolmesGPT на основе текста ошибки.
+
+### Эффективные поисковые запросы для K8sGPT
+
+```bash
+# Семантический поиск работает хорошо — каждый doc это одна конкретная проблема
+python3 /kb-scripts/kb_tools.py search "CrashLoopBackOff pod restarting"     5 mvp-cloud
+python3 /kb-scripts/kb_tools.py search "Ingress no IngressClass configured"   5 mvp-cloud
+python3 /kb-scripts/kb_tools.py search "Service endpoints missing labels"      5 mvp-cloud
+python3 /kb-scripts/kb_tools.py search "Job failed error exit"                5 mvp-cloud
+python3 /kb-scripts/kb_tools.py search "node affinity pod unschedulable"      5 mvp-cloud
+python3 /kb-scripts/kb_tools.py search "ConfigMap not used by any pod"        5 mvp-cloud
+```
+
+> **Примечание:** 61 из 77 находок — "ConfigMap not used by any pod" (false positives: kube-root-ca.crt и Grafana dashboards ConfigMaps). При поиске конкретных runtime-проблем добавляй `kind != ConfigMap` фильтрацию в прямых запросах к MinIO.
+
+---
+
 ## Комбинированные запросы (все источники)
 
 ### Security + Lint: общий health check кластера
@@ -492,7 +657,7 @@ req = urllib.request.Request(
     data=json.dumps({
         'ask': 'Сделай полный health check кластера mvp-cloud. '
                'Используй kb_search и kb_list_findings для получения данных из всех источников: '
-               'kubescape (security), popeye (lint), kubevious (topology). '
+               'kubescape (security), popeye (lint), k8sgpt (runtime), kubevious (topology). '
                'Составь итоговый отчёт с приоритизированным списком проблем.'
     }).encode(),
     headers={'Content-Type': 'application/json'}, method='POST'
@@ -514,6 +679,26 @@ req = urllib.request.Request(
                '1) Найди все namespaces через topology '
                '2) Проверь security findings от kubescape для каждого namespace '
                '3) Покажи какие namespaces имеют наибольшие security риски'
+    }).encode(),
+    headers={'Content-Type': 'application/json'}, method='POST'
+)
+with urllib.request.urlopen(req, timeout=240) as r:
+    print(json.loads(r.read())['analysis'])
+"
+```
+
+### Runtime-проблемы + Security: что реально сломано сейчас
+
+```bash
+$K exec -n holmesgpt $HOLMES_POD -- python3 -c "
+import urllib.request, json
+req = urllib.request.Request(
+    'http://localhost:5050/api/chat',
+    data=json.dumps({
+        'ask': 'Используй kb_list_findings с doc_type=finding_k8sgpt чтобы найти runtime-проблемы. '
+               'Затем kb_search по finding_kubescape для security нарушений. '
+               'Для каждой runtime-проблемы скажи: есть ли связанный security риск? '
+               'Например: Pod не запускается из-за node affinity — это также security issue?'
     }).encode(),
     headers={'Content-Type': 'application/json'}, method='POST'
 )
@@ -1181,6 +1366,60 @@ network policies, with multiple compliance failures across key security controls
 **Наблюдение:** Самый эффективный тип запроса для быстрого обзора. LLM использует
 `kb_list_findings` + `kb_search` без тяжёлых fetches. Ответ готов за ~2-3 минуты.
 
+### Пример 7: K8sGPT runtime-проблемы — Ingress и Services
+
+**Запрос:**
+```json
+{
+  "ask": "Use kb_search with query 'Ingress does not specify IngressClass' and top_k=10, then kb_search with 'Service has no endpoints missing label', both filtered to finding_k8sgpt. List all affected resources, explain what IngressClass means and why missing endpoints is a problem, and suggest fixes."
+}
+```
+
+**Инструменты, вызванные LLM:**
+1. `kb_search` — "Ingress does not specify IngressClass" → 8 Ingress findings (score 0.73–0.81)
+2. `kb_search` — "Service has no endpoints missing label" → 4 Service findings
+3. `kubectl_describe` — проверил один из Ingress ресурсов для уточнения
+
+**Ответ HolmesGPT:**
+```
+## Runtime Findings from K8sGPT
+
+### Ingress Issues (8 affected resources)
+
+All 8 Ingress resources lack an `ingressClassName` specification:
+- frontend/frontend
+- qa-frontend/frontend, qa-backend/backend, qa-platform/gateway
+- test-simple-app/test-simple-app, test-multi-service/frontend, test-multi-service/backend
+- test-app-with-db/test-app-with-db
+
+**Why this matters:** Without an IngressClass, the Ingress controller
+(nginx, traefik, etc.) may ignore the resource entirely, making the
+application unreachable externally.
+
+**Fix:** Add `ingressClassName` to each Ingress spec:
+  spec:
+    ingressClassName: nginx  # or your controller name
+
+### Service Endpoint Issues (4 affected resources)
+
+Services with no matching endpoints (label selector mismatch):
+- kube-system/vm-k8s-stack-...-kube-scheduler → expected label component=kube-scheduler
+- kube-system/vm-k8s-stack-...-kube-controller-manager → component=kube-controller-manager
+- kube-system/vm-k8s-stack-...-kubeetcd → component=etcd
+- monitoring/vmalertmanager-... → multiple label mismatches
+
+**Root cause:** VictoriaMetrics k8s-stack creates Services expecting
+to scrape kube control plane components, but in managed Kubernetes
+clusters these components don't expose metrics with those labels.
+
+**Fix:** These are expected false-positives in managed clusters.
+Suppress by disabling the relevant ServiceMonitors in vm-k8s-stack values.
+```
+
+**Токены:** ~12,000 (3 tool calls, быстрый ответ ~90 сек)
+**Наблюдение:** K8sGPT даёт конкретные имена ресурсов с namespace — LLM сразу видит
+что именно сломано без необходимости скачивать большие JSON файлы.
+
 ---
 
 ## Шпаргалка: все инструменты за 30 секунд
@@ -1195,26 +1434,36 @@ $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py search "privilege ro
 # 2. Popeye — список всех lint отчётов
 $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list finding_popeye 3 mvp-cloud
 
-# 3. Topology — список snapshot'ов
+# 3. K8sGPT — runtime-проблемы (один doc = одна проблема)
+$K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list finding_k8sgpt 20 mvp-cloud
+$K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py search "Ingress no class endpoints missing" 5 mvp-cloud
+
+# 4. Topology — список snapshot'ов
 $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list topology 3 mvp-cloud
 
-# 4. Все документы (обзор)
+# 5. Все документы (обзор)
 $K exec -n holmesgpt $HP -- python3 /kb-scripts/kb_tools.py list "" 20 mvp-cloud
 
-# 5. Скачать сырой файл из MinIO (boto3, AWS4 — curl -u НЕ работает)
+# 6. Скачать сырой файл из MinIO (boto3, AWS4 — curl -u НЕ работает)
 $K exec -n holmesgpt $HP -- \
   python3 /kb-scripts/kb_tools.py fetch "raw/kubescape/mvp-cloud/<ts>/findings.json"
+$K exec -n holmesgpt $HP -- \
+  python3 /kb-scripts/kb_tools.py fetch "raw/k8sgpt/mvp-cloud/<ts>/results.json"
 
-# 6. Проверить статус toolset
+# 7. Проверить статус toolset
 $K logs -n holmesgpt $HP | grep "Toolset kb"
 # Ожидается: ✅ Toolset kb/stack
 
-# 7. Спросить HolmesGPT через API (порт 5050, таймаут 600s)
+# 8. Проверить k8sgpt operator и Result CRD
+$K get pods -n k8sgpt-operator-system
+$K get results -n k8sgpt-operator-system --no-headers | wc -l
+
+# 9. Спросить HolmesGPT через API (порт 5050, таймаут 600s)
 $K exec -n holmesgpt $HP -- python3 -c "
 import urllib.request, json
 r = urllib.request.urlopen(urllib.request.Request(
     'http://localhost:5050/api/chat',
-    json.dumps({'ask': 'Найди security проблемы в кластере используя kb-stack'}).encode(),
+    json.dumps({'ask': 'Найди runtime-проблемы кластера используя kb_list_findings с doc_type=finding_k8sgpt'}).encode(),
     {'Content-Type': 'application/json'}, 'POST'), timeout=600)
 print(json.loads(r.read())['analysis'])
 "
