@@ -6,3 +6,14 @@ metadata:
 spec:
   targets:
     - ./templates/test-environment/template.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Platform engineering team
+spec:
+  type: team
+  profile:
+    displayName: Platform Team
+  children: []
