@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: qa-check-env
+  description: Test environment qa-check
+  labels:
+    environment: qa-check
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/qa-check.yaml"
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team
