@@ -1,0 +1,30 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: my777-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: my777
+spec:
+  name: my777
+
+  frontend:
+    enabled: true
+    replicas: 2
+
+  backend:
+    enabled: true
+    
+    database:
+      password: changeme777
+    
+
+  platform:
+    enabled: true
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false
