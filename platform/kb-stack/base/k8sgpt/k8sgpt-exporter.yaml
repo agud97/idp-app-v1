@@ -20,16 +20,20 @@ spec:
           restartPolicy: OnFailure
           initContainers:
             - name: collector
-              image: bitnami/kubectl:1.31
+              image: curlimages/curl:8.5.0
               command:
                 - /bin/sh
                 - -c
                 - |
                   set -euo pipefail
-                  echo "Collecting K8sGPT Result CRDs..."
-                  kubectl get results -n k8sgpt-operator-system -o json > /shared/results.json
-                  COUNT=$(python3 -c "import json,sys; d=json.load(open('/shared/results.json')); print(len(d.get('items',[])))")
-                  echo "Collected ${COUNT} results ($(wc -c < /shared/results.json) bytes)"
+                  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+                  CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+                  echo "Collecting K8sGPT Result CRDs via Kubernetes API..."
+                  curl -sf --cacert "${CACERT}" \
+                    -H "Authorization: Bearer ${TOKEN}" \
+                    "https://kubernetes.default.svc/apis/core.k8sgpt.ai/v1alpha1/namespaces/k8sgpt-operator-system/results" \
+                    -o /shared/results.json
+                  echo "Collected $(wc -c < /shared/results.json) bytes"
               volumeMounts:
                 - name: shared
                   mountPath: /shared
