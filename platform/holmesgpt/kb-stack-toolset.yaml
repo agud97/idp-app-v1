@@ -34,7 +34,7 @@ data:
             description: |
               List documents from kb-stack knowledge base filtered by type.
               Parameters:
-              - doc_type: One of: finding_kubescape, finding_popeye, topology, object_card (default: all)
+              - doc_type: One of: finding_kubescape, finding_popeye, finding_k8sgpt, topology, object_card (default: all)
               - limit: Number of results (default: 20)
               - cluster_id: Cluster ID (default: mvp-cloud)
             command: >

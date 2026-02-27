@@ -159,7 +159,32 @@ data:
             data = {"raw": body.decode("utf-8", errors="ignore")}
           data = redact(data)
 
-          if key.startswith("raw/kubescape/"):
+          if key.startswith("raw/k8sgpt/"):
+            items = data.get("items", []) if isinstance(data, dict) else []
+            for item in items:
+              spec = item.get("spec", {})
+              meta = item.get("metadata", {})
+              kind = spec.get("kind", "unknown")
+              res_name = spec.get("name", meta.get("name", "unknown"))
+              errors = spec.get("error", [])
+              if isinstance(errors, list):
+                error_text = "; ".join(
+                  e if isinstance(e, str) else e.get("text", str(e)) for e in errors
+                )
+              else:
+                error_text = str(errors)
+              docs.append({
+                "id": str(uuid.uuid4()),
+                "cluster_id": cluster_id,
+                "timestamp": ts,
+                "doc_type": "finding_k8sgpt",
+                "text": json.dumps(item)[:2000],
+                "embed_text": f"k8sgpt finding: {kind} {res_name} - {error_text}"[:500],
+                "source_path": key,
+              })
+            print(f"k8sgpt: {len(items)} findings from {key}", flush=True)
+            continue
+          elif key.startswith("raw/kubescape/"):
             doc_type = "finding_kubescape"
           elif key.startswith("raw/popeye/"):
             doc_type = "finding_popeye"

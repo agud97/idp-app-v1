@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k8sgpt-exporter
+  namespace: kb-system
+spec:
+  schedule: "*/30 * * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: k8sgpt-exporter
+        spec:
+          serviceAccountName: k8sgpt-exporter-sa
+          restartPolicy: OnFailure
+          initContainers:
+            - name: collector
+              image: bitnami/kubectl:1.31
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  echo "Collecting K8sGPT Result CRDs..."
+                  kubectl get results -n k8sgpt-operator-system -o json > /shared/results.json
+                  COUNT=$(python3 -c "import json,sys; d=json.load(open('/shared/results.json')); print(len(d.get('items',[])))")
+                  echo "Collected ${COUNT} results ($(wc -c < /shared/results.json) bytes)"
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+          containers:
+            - name: uploader
+              image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+              envFrom:
+                - configMapRef:
+                    name: kb-stack-config
+              env:
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: accessKey
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: minio-credentials
+                      key: secretKey
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  ts=$(date -u +"%Y%m%dT%H%M%SZ")
+                  mc alias set local "$MINIO_ENDPOINT" "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
+                  mc mb -p "local/kb-artifacts" || true
+                  mc cp "/shared/results.json" "local/kb-artifacts/raw/k8sgpt/${CLUSTER_ID}/${ts}/results.json"
+                  echo "Uploaded to kb-artifacts/raw/k8sgpt/${CLUSTER_ID}/${ts}/results.json"
+              volumeMounts:
+                - name: shared
+                  mountPath: /shared
+          volumes:
+            - name: shared
+              emptyDir: {}

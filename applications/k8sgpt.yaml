@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k8sgpt
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://charts.k8sgpt.ai/
+    chart: k8sgpt-operator
+    targetRevision: "*"
+    helm:
+      values: |
+        # Operator only — K8sGPT CR deployed separately (k8sgpt-scanner.yaml)
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k8sgpt-operator-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

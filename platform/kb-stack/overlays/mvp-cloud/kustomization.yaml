@@ -32,3 +32,10 @@ patches:
       - op: replace
         path: /spec/schedule
         value: "*/30 * * * *"
+  - target:
+      kind: CronJob
+      name: k8sgpt-exporter
+    patch: |-
+      - op: replace
+        path: /spec/schedule
+        value: "*/30 * * * *"

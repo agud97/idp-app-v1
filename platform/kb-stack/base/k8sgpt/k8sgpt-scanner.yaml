@@ -1,0 +1,18 @@
+# K8sGPT CR — apply manually after k8sgpt operator is Running:
+#   kubectl --kubeconfig ~/proj/cross/kubeconfig_6005021 apply -f this file
+#
+# NOT included in kustomization.yaml because this CR lives in
+# k8sgpt-operator-system, while kb-stack kustomize targets kb-system.
+apiVersion: core.k8sgpt.ai/v1alpha1
+kind: K8sGPT
+metadata:
+  name: k8sgpt-scanner
+  namespace: k8sgpt-operator-system
+spec:
+  ai:
+    enabled: false
+  noCache: false
+  repository: ghcr.io/k8sgpt-ai/k8sgpt
+  version: v0.4.22
+  # Trivy integration disabled — not needed at this stage
+  # No sink — data flows via MinIO → Qdrant → HolmesGPT

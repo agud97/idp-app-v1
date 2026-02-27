@@ -6,6 +6,7 @@ resources:
   - kubescape
   - popeye
   - kubevious
+  - k8sgpt
   - normalizer
   - rbac
   - holmesgpt
