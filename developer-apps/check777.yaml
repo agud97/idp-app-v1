@@ -1,0 +1,30 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: check777-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: check777
+spec:
+  name: check777
+
+  frontend:
+    enabled: true
+    replicas: 1
+
+  backend:
+    enabled: true
+    
+    database:
+      password: pass123
+    
+
+  platform:
+    enabled: false
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false
