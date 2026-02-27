@@ -84,6 +84,7 @@ spec:
           - Backend: ${{ parameters.enableBackend }}
           - Platform: ${{ parameters.enablePlatform }}
         commitMessage: "feat: create test environment ${{ parameters.envName }}"
+        update: true
 
   output:
     links:
