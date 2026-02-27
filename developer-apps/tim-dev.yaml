@@ -1,0 +1,27 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: tim-dev-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: tim-dev
+spec:
+  name: tim-dev
+
+  frontend:
+    enabled: true
+    replicas: 2
+
+  backend:
+    enabled: false
+    
+
+  platform:
+    enabled: true
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false
