@@ -40,12 +40,31 @@ spec:
               github:
                 - host: github.com
                   token: ${GITHUB_TOKEN}
+            kubernetes:
+              serviceLocatorMethod:
+                type: multiTenant
+              clusterLocatorMethods:
+                - type: config
+                  clusters:
+                    - url: https://194.58.110.52:6443
+                      name: main
+                      authProvider: serviceAccount
+                      serviceAccountToken: ${BACKSTAGE_K8S_TOKEN}
+                      skipTLSVerify: true
+              customResources:
+                - group: 'idp.example.com'
+                  apiVersion: 'v1alpha1'
+                  plural: 'testenvironments'
             catalog:
               rules:
                 - allow: [Component, System, API, Resource, Location, Template]
               locations:
                 - type: url
                   target: https://github.com/agud97/idp-app-v1/blob/main/platform/backstage/catalog-info.yaml
+                - type: url
+                  target: https://github.com/agud97/idp-app-v1/blob/main/developer-apps/catalog/qa-environment.yaml
+                - type: url
+                  target: https://github.com/agud97/idp-app-v1/blob/main/developer-apps/catalog/demo123.yaml
             scaffolder:
               defaultAuthor:
                 name: Backstage IDP
@@ -59,6 +78,11 @@ spec:
                   key: GITHUB_TOKEN
             - name: NODE_ENV
               value: development
+            - name: BACKSTAGE_K8S_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: K8S_SA_TOKEN
 
         postgresql:
           enabled: true

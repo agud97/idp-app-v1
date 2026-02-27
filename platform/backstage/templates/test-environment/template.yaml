@@ -86,7 +86,17 @@ spec:
         commitMessage: "feat: create test environment ${{ parameters.envName }}"
         update: true
 
+    - id: register-catalog
+      name: Register Component in Catalog
+      action: catalog:register
+      input:
+        catalogInfoUrl: https://github.com/agud97/idp-app-v1/blob/main/developer-apps/catalog/${{ parameters.envName }}.yaml
+        optional: true
+
   output:
     links:
       - title: Pull Request
         url: ${{ steps['publish-pr'].output.remoteUrl }}
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps['register-catalog'].output.entityRef }}
