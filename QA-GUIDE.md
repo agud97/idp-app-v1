@@ -450,6 +450,138 @@ spec:
 
 ---
 
+## Что происходит после merge PR
+
+После того как вы нажали **Merge pull request**, запускается автоматическая цепочка из четырёх этапов. Вмешательство не требуется — всё происходит само.
+
+### Этап 1 — ArgoCD применяет файл (0–2 мин)
+
+ArgoCD отслеживает папку `developer-apps/` в репозитории. Как только PR смержен и файл появляется в ветке `main`, ArgoCD замечает изменение и применяет его в кластер:
+
+```
+developer-apps/my-env.yaml  →  kubectl apply  →  TestEnvironment (namespace: default)
+```
+
+Проверить:
+```bash
+kubectl get testenvironment -A
+# NAME         READY   ...
+# my-env-env   False   ...  ← появился, Crossplane ещё обрабатывает
+```
+
+### Этап 2 — Crossplane разворачивает окружение
+
+Crossplane видит новый `TestEnvironment` (это claim) и создаёт составной ресурс `XTestEnvironment`. Затем запускает **Composition** — шаблонизатор на Go Templates, который читает ваш `spec` и для каждого включённого (`enabled: true`) приложения создаёт отдельный claim:
+
+| Вы указали | Crossplane создаёт claim |
+|---|---|
+| `frontend.enabled: true` | `FrontendApp` → `{env}-frontend` |
+| `backend.enabled: true` | `BackendApp` → `{env}-backend` |
+| `platform.enabled: true` | `PlatformApp` → `{env}-platform` |
+| `staticFiles.enabled: true` | `StaticFilesApp` → `{env}-static-files` |
+| … | … |
+
+Приложения с `enabled: false` — **пропускаются**, никаких ресурсов не создаётся.
+
+### Этап 3 — Каждый claim разворачивает своё приложение
+
+Каждый созданный claim запускает собственную Composition, которая создаёт реальные Kubernetes-ресурсы.
+
+**Пример для `frontend` (если `spec.name: qa`):**
+
+```
+FrontendApp claim "qa-frontend"
+  ├── Namespace      qa-frontend
+  ├── Deployment     qa-frontend  (nginx:alpine, 2 реплики по умолчанию)
+  └── Service        frontend  (port 80)
+```
+
+**Пример для `backend`:**
+
+```
+BackendApp claim "qa-backend"
+  ├── Namespace      qa-backend
+  ├── Deployment     qa-backend  (nginx:alpine, port 8080)
+  ├── StatefulSet    backend-db  (PostgreSQL)
+  ├── Service        backend
+  └── Service        backend-db
+  [опционально: Job migration]
+```
+
+**Пример для `platform`:**
+
+```
+PlatformApp claim "qa-platform"
+  ├── Namespace      qa-platform
+  ├── Deployment     gateway   (nginx:alpine)
+  ├── Deployment     auth      (nginx:alpine)
+  ├── Deployment     users     (nginx:alpine)
+  ├── Deployment     notifications
+  ├── Deployment     worker
+  ├── Deployment     redis     (redis:7-alpine)
+  └── Service        (для каждого сервиса)
+```
+
+### Этап 4 — Kubernetes запускает поды
+
+После того как Crossplane создал все объекты, Kubernetes планирует поды на ноды и запускает контейнеры. Обычно это занимает ещё 30–60 секунд.
+
+Финальная проверка:
+```bash
+# Все namespace окружения
+kubectl get ns | grep "^qa-"
+# qa-frontend    Active
+# qa-backend     Active
+# qa-platform    Active
+
+# Все поды
+kubectl get pods -A | grep "^qa-"
+# qa-frontend   frontend-xxxx   1/1  Running
+# qa-backend    backend-xxxx    1/1  Running
+# qa-backend    backend-db-0    1/1  Running
+# qa-platform   gateway-xxxx    1/1  Running
+# ...
+
+# Статус самого окружения
+kubectl get testenvironment qa-env -n default
+# NAME     READY   SYNCED
+# qa-env   True    True    ← оба True = всё готово
+```
+
+### Полная схема
+
+```
+merge PR
+  │
+  ▼ ~1 мин
+ArgoCD применяет TestEnvironment в кластер
+  │
+  ▼ секунды
+Crossplane: TestEnvironment → XTestEnvironment
+  │
+  ├─► [frontend.enabled] → FrontendApp claim
+  │     └─► Namespace + Deployment + Service
+  │
+  ├─► [backend.enabled]  → BackendApp claim
+  │     └─► Namespace + Deployment + StatefulSet(DB) + Services
+  │
+  └─► [platform.enabled] → PlatformApp claim
+        └─► Namespace + Deployment×N + Service×N
+  │
+  ▼ ~30-60 сек
+Kubernetes запускает поды → окружение готово
+```
+
+### Что происходит при изменениях
+
+Тот же механизм работает при любых изменениях в YAML:
+
+- **Изменили `replicas`** → Crossplane обновляет Deployment → K8s меняет количество подов
+- **Поставили `enabled: false`** → Crossplane удаляет claim → каскадно удаляется namespace со всем содержимым (включая PVC с данными БД)
+- **Удалили файл из git** → ArgoCD удаляет TestEnvironment → Crossplane каскадно удаляет все claims и все ресурсы всех приложений окружения
+
+---
+
 ## Удаление окружения
 
 Удалите YAML-файл и запушьте:
@@ -529,7 +661,10 @@ A: Да. После мержа PR в репозитории появится ф�
 A: Попросите открыть port-forward: `kubectl port-forward svc/backstage 7007:7007 -n backstage`. Backstage работает в кластере, прямого внешнего доступа нет.
 
 **Q: Сколько времени занимает деплой?**
-A: 1-2 минуты после мержа PR (Backstage) или `git push` (git напрямую).
+A: 1-2 минуты после мержа PR (Backstage) или `git push` (git напрямую). Полная цепочка: ArgoCD применяет файл (~1 мин) → Crossplane создаёт ресурсы (секунды) → Kubernetes запускает поды (~30-60 сек).
+
+**Q: Как понять, что окружение готово?**
+A: Выполните `kubectl get testenvironment <имя> -n default` — когда оба поля `READY` и `SYNCED` станут `True`, окружение полностью развёрнуто. Дополнительно: `kubectl get pods -A | grep "^<имя>-"` — все поды должны быть в статусе `Running`.
 
 **Q: Можно ли создать несколько окружений?**
 A: Да, создайте несколько с разными именами: `qa`, `staging`, `dev-alice` и т.д. Каждое создаёт namespace с уникальным префиксом и не мешает остальным.
