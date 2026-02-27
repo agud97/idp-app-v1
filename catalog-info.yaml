@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: mytest777-env
+  description: Test environment mytest777
+  labels:
+    environment: mytest777
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/mytest777.yaml"
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team
