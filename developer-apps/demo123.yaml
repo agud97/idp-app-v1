@@ -1,0 +1,30 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: demo123-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: demo123
+spec:
+  name: demo123
+
+  frontend:
+    enabled: true
+    replicas: 1
+
+  backend:
+    enabled: true
+    
+    database:
+      password: pass123
+    
+
+  platform:
+    enabled: true
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false

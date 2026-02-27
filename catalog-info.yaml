@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: demo123-env
+  description: Test environment demo123
+  labels:
+    environment: demo123
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/demo123.yaml"
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team
