@@ -1,0 +1,101 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: test-environment
+  title: Create Test Environment
+  description: Creates a TestEnvironment resource for QA/staging/dev via GitOps PR
+  tags:
+    - qa
+    - testing
+    - environment
+spec:
+  owner: platform-team
+  type: environment
+
+  parameters:
+    - title: Environment Configuration
+      required:
+        - envName
+      properties:
+        envName:
+          title: Environment Name
+          type: string
+          description: Short name for the environment (e.g. qa, staging, dev-alice)
+          pattern: "^[a-z][a-z0-9-]*$"
+          ui:autofocus: true
+
+        enableFrontend:
+          title: Enable Frontend
+          type: boolean
+          default: true
+
+        frontendReplicas:
+          title: Frontend Replicas
+          type: integer
+          default: 2
+          minimum: 1
+          maximum: 10
+
+        enableBackend:
+          title: Enable Backend
+          type: boolean
+          default: true
+
+        backendDbPassword:
+          title: Backend DB Password
+          type: string
+          description: Database password for the backend service
+          default: changeme
+          ui:widget: password
+
+        enablePlatform:
+          title: Enable Platform Services
+          type: boolean
+          default: false
+
+  steps:
+    - id: fetch-template
+      name: Generate Environment YAML
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          envName: ${{ parameters.envName }}
+          enableFrontend: ${{ parameters.enableFrontend }}
+          frontendReplicas: ${{ parameters.frontendReplicas }}
+          enableBackend: ${{ parameters.enableBackend }}
+          backendDbPassword: ${{ parameters.backendDbPassword }}
+          enablePlatform: ${{ parameters.enablePlatform }}
+
+    - id: publish-pr
+      name: Create Pull Request
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=agud97&repo=idp-app-v1
+        title: "feat: create test environment ${{ parameters.envName }}"
+        branchName: backstage/env-${{ parameters.envName }}
+        description: |
+          ## New Test Environment: `${{ parameters.envName }}`
+
+          Created via Backstage IDP scaffolder.
+
+          ### Configuration
+          - Frontend: ${{ parameters.enableFrontend }} (replicas: ${{ parameters.frontendReplicas }})
+          - Backend: ${{ parameters.enableBackend }}
+          - Platform: ${{ parameters.enablePlatform }}
+        commitMessage: "feat: create test environment ${{ parameters.envName }}"
+
+    - id: register
+      name: Register in Catalog
+      action: catalog:register
+      input:
+        repoContentsUrl: ${{ steps['publish-pr'].output.remoteUrl }}
+        catalogInfoPath: /catalog-info.yaml
+
+  output:
+    links:
+      - title: Pull Request
+        url: ${{ steps['publish-pr'].output.remoteUrl }}
+      - title: Open in Catalog
+        icon: catalog
+        entityRef: ${{ steps['register'].output.entityRef }}

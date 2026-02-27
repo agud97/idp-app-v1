@@ -1,0 +1,30 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: ${{ values.envName }}-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: ${{ values.envName }}
+spec:
+  name: ${{ values.envName }}
+
+  frontend:
+    enabled: ${{ values.enableFrontend }}
+    {% if values.enableFrontend %}replicas: ${{ values.frontendReplicas | default(2) }}{% endif %}
+
+  backend:
+    enabled: ${{ values.enableBackend }}
+    {% if values.enableBackend %}
+    database:
+      password: ${{ values.backendDbPassword | default('changeme') }}
+    {% endif %}
+
+  platform:
+    enabled: ${{ values.enablePlatform }}
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false

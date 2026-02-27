@@ -1,0 +1,13 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: ${{ values.envName }}-env
+  description: Test environment ${{ values.envName }}
+  labels:
+    environment: ${{ values.envName }}
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/${{ values.envName }}.yaml"
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team

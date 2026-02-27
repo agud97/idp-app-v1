@@ -1,0 +1,89 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: backstage
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://backstage.github.io/charts
+    chart: backstage
+    targetRevision: "2.3.0"
+    helm:
+      values: |
+        backstage:
+          image:
+            registry: ghcr.io
+            repository: backstage/backstage
+            tag: latest
+          appConfig:
+            app:
+              title: IDP Platform
+              baseUrl: http://localhost:7007
+            backend:
+              baseUrl: http://localhost:7007
+              cors:
+                origin: http://localhost:7007
+              database:
+                client: pg
+                connection:
+                  host: ${POSTGRES_HOST}
+                  port: ${POSTGRES_PORT}
+                  user: ${POSTGRES_USER}
+                  password: ${POSTGRES_PASSWORD}
+            auth:
+              environment: development
+              providers:
+                guest:
+                  dangerouslyAllowOutsideDevelopment: true
+            integrations:
+              github:
+                - host: github.com
+                  token: ${GITHUB_TOKEN}
+            catalog:
+              rules:
+                - allow: [Component, System, API, Resource, Location, Template]
+              locations:
+                - type: url
+                  target: https://github.com/agud97/idp-app-v1/blob/main/platform/backstage/catalog-info.yaml
+            scaffolder:
+              defaultAuthor:
+                name: Backstage IDP
+                email: backstage@idp.local
+              defaultCommitMessage: "feat: create test environment via Backstage"
+          extraEnvVars:
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: backstage-secrets
+                  key: GITHUB_TOKEN
+            - name: NODE_ENV
+              value: development
+
+        postgresql:
+          enabled: true
+          auth:
+            password: "backstage-pg-pass"
+            username: backstage
+            database: backstage_plugin_catalog
+          primary:
+            persistence:
+              storageClass: openebs-hostpath
+              size: 5Gi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: backstage
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: backstage-postgresql
+      namespace: backstage
+      jsonPointers:
+        - /data
