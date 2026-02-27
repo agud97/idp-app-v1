@@ -111,6 +111,9 @@ spec:
                     namespace: {{ $namespace }}
                     labels:
                       app: {{ $appName }}-db
+                      {{- if ne $envName "" }}
+                      environment: {{ $envName }}
+                      {{- end }}
                   spec:
                     replicas: 1
                     selector:
@@ -120,6 +123,9 @@ spec:
                       metadata:
                         labels:
                           app: {{ $appName }}-db
+                          {{- if ne $envName "" }}
+                          environment: {{ $envName }}
+                          {{- end }}
                       spec:
                         containers:
                           - name: postgres
@@ -185,6 +191,9 @@ spec:
                     namespace: {{ $namespace }}
                     labels:
                       app: {{ $appName }}
+                      {{- if ne $envName "" }}
+                      environment: {{ $envName }}
+                      {{- end }}
                   spec:
                     replicas: {{ $replicas }}
                     selector:
@@ -194,6 +203,9 @@ spec:
                       metadata:
                         labels:
                           app: {{ $appName }}
+                          {{- if ne $envName "" }}
+                          environment: {{ $envName }}
+                          {{- end }}
                       spec:
                         {{- if and .observed.composite.resource.spec.migration .observed.composite.resource.spec.migration.enabled }}
                         initContainers:

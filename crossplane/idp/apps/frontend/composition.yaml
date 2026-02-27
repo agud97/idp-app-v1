@@ -62,6 +62,9 @@ spec:
                     namespace: {{ $namespace }}
                     labels:
                       app: {{ $appName }}
+                      {{- if ne $envName "" }}
+                      environment: {{ $envName }}
+                      {{- end }}
                   spec:
                     replicas: {{ $replicas }}
                     selector:
@@ -71,6 +74,9 @@ spec:
                       metadata:
                         labels:
                           app: {{ $appName }}
+                          {{- if ne $envName "" }}
+                          environment: {{ $envName }}
+                          {{- end }}
                       spec:
                         containers:
                           - name: {{ $appName }}
