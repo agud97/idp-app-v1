@@ -763,14 +763,41 @@ This entity has relations to other entities, which can't be found in the catalog
 Entities not found are: group:default/platform-team
 ```
 
-### Причина
-Все Component-сущности (в `developer-apps/catalog/` и в skeleton шаблона) содержат `owner: platform-team`. Backstage интерпретирует это как ссылку на `group:default/platform-team`. Если `Group`-сущности с таким именем нет в каталоге — связь не разрешается и показывается предупреждение.
+### Причина (двухуровневая)
 
-### Решение
-Добавить `Group`-сущность прямо в `platform/backstage/catalog-info.yaml` (файл уже подгружается Backstage через статическую location):
+**Уровень 1:** Все Component-сущности содержат `owner: platform-team`. Backstage интерпретирует это как ссылку на `group:default/platform-team`. Если `Group`-сущности нет в каталоге — связь не разрешается.
+
+**Уровень 2 (скрытый):** Даже после добавления `Group` в `catalog-info.yaml` сущность не появлялась. В логах после принудительного `catalog:refresh` обнаружена истинная причина:
+
+```
+Entity group:default/platform-team at url:.../catalog-info.yaml
+is not of an allowed kind for that location
+```
+
+`Group` отсутствовал в `catalog.rules.allow`. Backstage читал файл, находил сущность, но **молча отклонял** её из-за правил допустимых kinds.
+
+### Диагностика
+```bash
+# Принудительный refresh location и наблюдение за логами
+TOKEN=$(curl -s -X POST http://localhost:17007/api/auth/guest/refresh \
+  -H "Content-Type: application/json" -d '{}' | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['backstageIdentity']['token'])")
+
+curl -s -X POST "http://localhost:17007/api/catalog/refresh" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"entityRef":"location:default/generated-b076f861b84fb97ef0dc0aae49d499cfbdc23b19"}'
+
+# В логах Backstage:
+kubectl logs deployment/backstage -n backstage --since=5s | grep -i "platform-team"
+# → is not of an allowed kind for that location
+```
+
+### Решение (два шага)
+
+**Шаг 1** — добавить `Group`-сущность в `platform/backstage/catalog-info.yaml`:
 
 ```yaml
-# platform/backstage/catalog-info.yaml
 ---
 apiVersion: backstage.io/v1alpha1
 kind: Group
@@ -784,9 +811,40 @@ spec:
   children: []
 ```
 
-После пуша в git Backstage при следующем refresh-цикле обнаружил сущность и предупреждение исчезло.
+**Шаг 2** — добавить `Group` и `User` в `catalog.rules.allow` в `applications/backstage.yaml`:
 
-**Коммит:** `4ec35d1 fix(backstage): add platform-team Group entity to catalog`
+```yaml
+catalog:
+  rules:
+    - allow: [Component, System, API, Resource, Location, Template, Group, User]
+    #                                                                ^^^^^^^^^^^
+    #                                                                было без Group/User
+```
+
+После пуша ArgoCD синхронизировал Backstage, pod перезапустился, `Group/platform-team` появился в каталоге, связь `ownedBy` разрешилась.
+
+**Коммиты:**
+- `4ec35d1 fix(backstage): add platform-team Group entity to catalog`
+- `729d2a9 fix(backstage): add Group and User to catalog.rules allow list`
+
+### Проверка
+```bash
+# Group появился в каталоге
+curl -s "http://localhost:17007/api/catalog/entities?filter=kind=Group" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys,json
+for e in json.load(sys.stdin): print(e['metadata']['name'])
+"
+# platform-team  ✓
+
+# Связь ownedBy разрешена
+curl -s "http://localhost:17007/api/catalog/entities/by-name/component/default/demo123-env" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c "
+import sys,json
+for r in json.load(sys.stdin).get('relations',[]): print(r['type'], '->', r['targetRef'])
+"
+# ownedBy -> group:default/platform-team  ✓
+```
 
 ---
 
@@ -801,7 +859,7 @@ spec:
 | 5 | app-of-apps не подхватил коммит | `kubectl annotate ... refresh=hard` + `kubectl patch ... sync` |
 | 6 | `catalog.providers.github` молча игнорируется | Модуль не в образе; использовать статические locations + `catalog:register` |
 | 7 | Kubernetes plugin не находит pods | Добавить label `environment` в Crossplane compositions |
-| 8 | `group:default/platform-team` not found в каталоге | Добавить `Group`-сущность в `catalog-info.yaml` |
+| 8 | `group:default/platform-team` не найден; `Group` молча отклоняется | Добавить `Group` в `catalog-info.yaml` **и** в `catalog.rules.allow` |
 
 ---
 
