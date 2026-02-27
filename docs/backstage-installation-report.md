@@ -1,6 +1,6 @@
 # Отчёт: Установка и настройка Backstage IDP
 
-**Дата:** 2026-02-27 — 2026-02-28
+**Дата:** 2026-02-27 — 2026-02-28 (обновлено 2026-02-28)
 **Кластер:** Kubernetes на 194.58.110.52:6443
 **GitOps-репозиторий:** github.com/agud97/idp-app-v1
 **Итоговая версия:** backstage/backstage Helm chart 2.6.3
@@ -753,7 +753,44 @@ cluster-wide:
 
 ---
 
-## 13. Ключевые уроки
+## 13. Проблема 8 — Неразрешённая связь owner: group:default/platform-team
+
+### Симптом
+В UI Backstage на странице каждого Component отображалось предупреждение:
+
+```
+This entity has relations to other entities, which can't be found in the catalog.
+Entities not found are: group:default/platform-team
+```
+
+### Причина
+Все Component-сущности (в `developer-apps/catalog/` и в skeleton шаблона) содержат `owner: platform-team`. Backstage интерпретирует это как ссылку на `group:default/platform-team`. Если `Group`-сущности с таким именем нет в каталоге — связь не разрешается и показывается предупреждение.
+
+### Решение
+Добавить `Group`-сущность прямо в `platform/backstage/catalog-info.yaml` (файл уже подгружается Backstage через статическую location):
+
+```yaml
+# platform/backstage/catalog-info.yaml
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-team
+  description: Platform engineering team
+spec:
+  type: team
+  profile:
+    displayName: Platform Team
+  children: []
+```
+
+После пуша в git Backstage при следующем refresh-цикле обнаружил сущность и предупреждение исчезло.
+
+**Коммит:** `4ec35d1 fix(backstage): add platform-team Group entity to catalog`
+
+---
+
+## 14. Ключевые уроки
 
 | # | Проблема | Решение |
 |---|----------|---------|
@@ -764,6 +801,7 @@ cluster-wide:
 | 5 | app-of-apps не подхватил коммит | `kubectl annotate ... refresh=hard` + `kubectl patch ... sync` |
 | 6 | `catalog.providers.github` молча игнорируется | Модуль не в образе; использовать статические locations + `catalog:register` |
 | 7 | Kubernetes plugin не находит pods | Добавить label `environment` в Crossplane compositions |
+| 8 | `group:default/platform-team` not found в каталоге | Добавить `Group`-сущность в `catalog-info.yaml` |
 
 ---
 
