@@ -57,7 +57,7 @@ spec:
                   plural: 'testenvironments'
             catalog:
               rules:
-                - allow: [Component, System, API, Resource, Location, Template]
+                - allow: [Component, System, API, Resource, Location, Template, Group, User]
               locations:
                 - type: url
                   target: https://github.com/agud97/idp-app-v1/blob/main/platform/backstage/catalog-info.yaml
