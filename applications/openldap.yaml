@@ -67,13 +67,17 @@ spec:
 
             dn: cn=prod_runityai_admin,ou=groups,dc=runityai,dc=local
             objectClass: posixGroup
+            objectClass: uidObject
             cn: prod_runityai_admin
+            uid: prod_runityai_admin
             gidNumber: 2000
             memberUid: admin1
 
             dn: cn=prod_runityai_user,ou=groups,dc=runityai,dc=local
             objectClass: posixGroup
+            objectClass: uidObject
             cn: prod_runityai_user
+            uid: prod_runityai_user
             gidNumber: 2001
             memberUid: user1
   destination:
