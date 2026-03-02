@@ -34,6 +34,8 @@ data:
             - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default LDAP Mapping: mail"]]
             - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default LDAP Mapping: Name"]]
             - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default LDAP Mapping: DN to User Path"]]
+          group_property_mappings:
+            - !Find [authentik_sources_ldap.ldapsourcepropertymapping, [name, "authentik default OpenLDAP Mapping: cn"]]
   openwebui-provider.yaml: |
     version: 1
     metadata:
@@ -64,7 +66,8 @@ data:
           client_secret: "openwebui-client-secret-change-me"
           client_type: "confidential"
           redirect_uris:
-            - "http://localhost:8080/oauth/oidc/callback"
+            - url: "http://localhost:8080/oauth/oidc/callback"
+              matching_mode: strict
           include_claims_in_id_token: true
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
           property_mappings:
