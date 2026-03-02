@@ -6,27 +6,60 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://charts.bitnami.com/bitnami
+    repoURL: https://jp-gouin.github.io/helm-openldap/
     chart: openldap
-    targetRevision: "0.4.6"
+    targetRevision: "2.0.4"
     helm:
       values: |
-        global:
-          ldapDomain: "runityai.local"
-        auth:
-          adminPassword: "LdapAdmin1234"
-          adminUsername: "admin"
-          usernames:
-            - admin1
-            - user1
-          passwords:
-            - Admin1Pass!
-            - User1Pass!
+        replicaCount: 1
+        env:
+          LDAP_DOMAIN: "runityai.local"
+          LDAP_ORGANISATION: "RunityAI"
+          LDAP_TLS: "false"
+          LDAP_REMOVE_CONFIG_AFTER_SETUP: "true"
+        adminPassword: "LdapAdmin1234"
+        configPassword: "LdapConfig1234"
+        replication:
+          enabled: false
+        persistence:
+          enabled: true
+          size: 1Gi
+          storageClass: openebs-hostpath
         customLdifFiles:
-          01-groups.ldif: |
+          01-users-groups.ldif: |
+            dn: ou=people,dc=runityai,dc=local
+            objectClass: organizationalUnit
+            ou: people
+
             dn: ou=groups,dc=runityai,dc=local
             objectClass: organizationalUnit
             ou: groups
+
+            dn: uid=admin1,ou=people,dc=runityai,dc=local
+            objectClass: inetOrgPerson
+            objectClass: posixAccount
+            objectClass: shadowAccount
+            uid: admin1
+            cn: admin1
+            sn: admin1
+            uidNumber: 1001
+            gidNumber: 1001
+            homeDirectory: /home/admin1
+            userPassword: {CLEARTEXT}Admin1Pass!
+            mail: admin1@runityai.local
+
+            dn: uid=user1,ou=people,dc=runityai,dc=local
+            objectClass: inetOrgPerson
+            objectClass: posixAccount
+            objectClass: shadowAccount
+            uid: user1
+            cn: user1
+            sn: user1
+            uidNumber: 1002
+            gidNumber: 1002
+            homeDirectory: /home/user1
+            userPassword: {CLEARTEXT}User1Pass!
+            mail: user1@runityai.local
 
             dn: cn=prod_runityai_admin,ou=groups,dc=runityai,dc=local
             objectClass: posixGroup
@@ -39,10 +72,6 @@ spec:
             cn: prod_runityai_user
             gidNumber: 2001
             memberUid: user1
-        persistence:
-          enabled: true
-          size: 1Gi
-          storageClass: openebs-hostpath
   destination:
     server: https://kubernetes.default.svc
     namespace: openldap

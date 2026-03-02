@@ -48,8 +48,5 @@ worker:
     - name: blueprints-custom
       mountPath: /blueprints/custom
 
-service:
-  servicePort: 9000
-
 blueprints:
   configMaps: []
