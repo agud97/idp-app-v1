@@ -1,0 +1,75 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  namespace: authentik
+data:
+  ldap-source.yaml: |
+    version: 1
+    metadata:
+      name: OpenLDAP Source
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_sources_ldap.ldapsource
+        state: present
+        identifiers:
+          slug: openldap
+        attrs:
+          name: OpenLDAP
+          server_uri: "ldap://openldap.openldap.svc.cluster.local:389"
+          bind_cn: "cn=admin,dc=runityai,dc=local"
+          bind_password: "LdapAdmin1234"
+          base_dn: "dc=runityai,dc=local"
+          user_object_filter: "(objectClass=inetOrgPerson)"
+          group_object_filter: "(objectClass=posixGroup)"
+          group_membership_field: "memberUid"
+          object_uniqueness_field: "uid"
+          sync_users: true
+          sync_groups: true
+          user_path_template: "goauthentik.io/sources/%(slug)s"
+  openwebui-provider.yaml: |
+    version: 1
+    metadata:
+      name: OpenWebUI OIDC
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.scopemapping
+        state: present
+        identifiers:
+          name: "openwebui-groups"
+        attrs:
+          name: "openwebui-groups"
+          scope_name: "groups"
+          description: "User groups for OpenWebUI"
+          expression: |
+            return list(request.user.ak_groups.values_list("name", flat=True))
+
+      - model: authentik_providers_oauth2.oauth2provider
+        state: present
+        identifiers:
+          name: "openwebui"
+        attrs:
+          name: "openwebui"
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          client_id: "openwebui"
+          client_secret: "openwebui-client-secret-change-me"
+          client_type: "confidential"
+          redirect_uris: "http://localhost:8080/oauth/oidc/callback"
+          include_claims_in_id_token: true
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, "authentik Self-signed Certificate"]]
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [name, openwebui-groups]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: openwebui
+        attrs:
+          name: "OpenWebUI"
+          slug: "openwebui"
+          provider: !Find [authentik_providers_oauth2.oauth2provider, [name, openwebui]]

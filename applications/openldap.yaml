@@ -1,0 +1,54 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openldap
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.bitnami.com/bitnami
+    chart: openldap
+    targetRevision: "0.4.6"
+    helm:
+      values: |
+        global:
+          ldapDomain: "runityai.local"
+        auth:
+          adminPassword: "LdapAdmin1234"
+          adminUsername: "admin"
+          usernames:
+            - admin1
+            - user1
+          passwords:
+            - Admin1Pass!
+            - User1Pass!
+        customLdifFiles:
+          01-groups.ldif: |
+            dn: ou=groups,dc=runityai,dc=local
+            objectClass: organizationalUnit
+            ou: groups
+
+            dn: cn=prod_runityai_admin,ou=groups,dc=runityai,dc=local
+            objectClass: posixGroup
+            cn: prod_runityai_admin
+            gidNumber: 2000
+            memberUid: admin1
+
+            dn: cn=prod_runityai_user,ou=groups,dc=runityai,dc=local
+            objectClass: posixGroup
+            cn: prod_runityai_user
+            gidNumber: 2001
+            memberUid: user1
+        persistence:
+          enabled: true
+          size: 1Gi
+          storageClass: openebs-hostpath
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openldap
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

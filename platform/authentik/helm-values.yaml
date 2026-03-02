@@ -1,0 +1,55 @@
+authentik:
+  secret_key: "authentik-secret-key-change-me"
+  postgresql:
+    password: "authentik-db-pass-change-me"
+
+postgresql:
+  enabled: true
+  auth:
+    username: "authentik"
+    password: "authentik-db-pass-change-me"
+    database: "authentik"
+  primary:
+    persistence:
+      size: 5Gi
+      storageClass: openebs-hostpath
+
+redis:
+  enabled: true
+  auth:
+    enabled: false
+  master:
+    persistence:
+      size: 1Gi
+      storageClass: openebs-hostpath
+
+server:
+  env:
+    - name: AUTHENTIK_BOOTSTRAP_PASSWORD
+      value: "AuthentikAdmin123!"
+    - name: AUTHENTIK_BOOTSTRAP_EMAIL
+      value: "admin@runityai.local"
+    - name: AUTHENTIK_URL
+      value: "http://authentik-server.authentik.svc.cluster.local:9000"
+  volumes:
+    - name: blueprints-custom
+      configMap:
+        name: authentik-blueprints
+  volumeMounts:
+    - name: blueprints-custom
+      mountPath: /blueprints/custom
+
+worker:
+  volumes:
+    - name: blueprints-custom
+      configMap:
+        name: authentik-blueprints
+  volumeMounts:
+    - name: blueprints-custom
+      mountPath: /blueprints/custom
+
+service:
+  servicePort: 9000
+
+blueprints:
+  configMaps: []

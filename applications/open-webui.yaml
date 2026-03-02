@@ -26,6 +26,27 @@ spec:
             value: ""
           - name: RAG_EMBEDDING_MODEL
             value: "sentence-transformers/all-MiniLM-L6-v2"
+          - name: ENABLE_OAUTH_SIGNUP
+            value: "true"
+          - name: OAUTH_PROVIDER_NAME
+            value: "Authentik"
+          - name: OPENID_PROVIDER_URL
+            value: "http://authentik-server.authentik.svc.cluster.local:9000/application/o/openwebui/"
+          - name: OAUTH_CLIENT_ID
+            value: "openwebui"
+          - name: OAUTH_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: open-webui-sso
+                key: OAUTH_CLIENT_SECRET
+          - name: OAUTH_ROLES_CLAIM
+            value: "groups"
+          - name: OAUTH_ADMIN_ROLES
+            value: "prod_runityai_admin"
+          - name: OAUTH_ALLOWED_ROLES
+            value: "prod_runityai_admin,prod_runityai_user"
+          - name: OAUTH_MERGE_ACCOUNTS_BY_EMAIL
+            value: "true"
         persistence:
           enabled: true
           size: 5Gi
