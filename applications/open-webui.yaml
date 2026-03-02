@@ -31,7 +31,7 @@ spec:
           - name: OAUTH_PROVIDER_NAME
             value: "Authentik"
           - name: OPENID_PROVIDER_URL
-            value: "http://authentik-server.authentik.svc.cluster.local:9000/application/o/openwebui/"
+            value: "http://authentik-server.authentik.svc.cluster.local/application/o/openwebui/"
           - name: OAUTH_CLIENT_ID
             value: "openwebui"
           - name: OAUTH_CLIENT_SECRET
