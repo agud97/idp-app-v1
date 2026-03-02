@@ -21,6 +21,10 @@ spec:
         configPassword: "LdapConfig1234"
         replication:
           enabled: false
+        ltb-passwd:
+          enabled: false
+        phpldapadmin:
+          enabled: false
         persistence:
           enabled: true
           size: 1Gi
