@@ -24,7 +24,7 @@ data:
           user_object_filter: "(objectClass=inetOrgPerson)"
           group_object_filter: "(objectClass=posixGroup)"
           group_membership_field: "memberUid"
-          object_uniqueness_field: "uid"
+          object_uniqueness_field: "entryUUID"
           sync_users: true
           sync_groups: true
           user_path_template: "goauthentik.io/sources/%(slug)s"
