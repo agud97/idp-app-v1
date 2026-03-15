@@ -7,6 +7,6 @@ metadata:
     backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/qa-environment.yaml"
     backstage.io/kubernetes-label-selector: 'environment=qa'
 spec:
-  type: environment
+  type: service
   lifecycle: experimental
   owner: platform-team
