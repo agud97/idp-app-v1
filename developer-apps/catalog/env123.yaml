@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: env123-env
+  description: Test environment env123
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/env123.yaml"
+    backstage.io/kubernetes-label-selector: 'environment=env123'
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team
