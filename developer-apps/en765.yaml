@@ -1,0 +1,30 @@
+apiVersion: idp.example.com/v1alpha1
+kind: TestEnvironment
+metadata:
+  name: en765-env
+  namespace: default
+  labels:
+    app.kubernetes.io/managed-by: backstage
+    environment: en765
+spec:
+  name: en765
+
+  frontend:
+    enabled: true
+    replicas: 2
+
+  backend:
+    enabled: true
+    
+    database:
+      password: changeme
+    
+
+  platform:
+    enabled: false
+
+  staticFiles:
+    enabled: false
+
+  docs:
+    enabled: false

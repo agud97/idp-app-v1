@@ -1,0 +1,12 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: en765-env
+  description: Test environment en765
+  annotations:
+    backstage.io/managed-by-location: "url:https://github.com/agud97/idp-app-v1/blob/main/developer-apps/en765.yaml"
+    backstage.io/kubernetes-label-selector: 'environment=en765'
+spec:
+  type: environment
+  lifecycle: experimental
+  owner: platform-team
